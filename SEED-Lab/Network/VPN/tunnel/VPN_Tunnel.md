@@ -164,3 +164,106 @@
     64 bytes from 192.168.53.100: icmp_seq=2 ttl=64 time=1.81ms
     64 bytes from 192.168.53.100: icmp_seq=3 ttl=64 time=1.69ms
     ```
+
+- modify `tun.py`, for each ICMP request packet, send a reply packet
+    - type of ICMP packet: 8 (echo-request), 0 (echo-reply)
+    ```
+    newip = IP(src=ip.dst, dst=ip.src)
+    newicmp = ip.payload
+    newicmp.type = 0
+    newpkt = newip/newicmp
+    os.write(tun, bytes(newpkt))
+    ```
+- test on terminal
+    ```
+    # ./tun.py
+    Interface Name: he15enbug0
+    IP / ICMP 192.168.53.99 > 192.168.53.100 echo-request 0 / Raw
+    IP / ICMP 192.168.53.99 > 192.168.53.100 echo-request 0 / Raw
+    IP / ICMP 192.168.53.99 > 192.168.53.100 echo-request 0 / Raw
+    ```
+    ```
+    # ping 192.168.53.100
+    PING 192.168.53.100 (192.168.53.100) 56(84) bytes of data.
+    64 bytes from 192.168.53.100: icmp_seq=1 ttl=64 time=1.56ms
+    64 bytes from 192.168.53.100: icmp_seq=2 ttl=64 time=1.34ms
+    64 bytes from 192.168.53.100: icmp_seq=3 ttl=64 time=1.46ms
+    ```
+
+## Task 3: Send the IP Packet to VPN Server Through a Tunnel
+- put the packet from TUN interface into the UDP payload field of a new IP packet
+- send the new packet to another machine
+- placing the original packet inside a new packet is called **IP tunneling**, the tunnel can be built on top of TCP or UDP
+
+- run `tun_server.py` on VPN Server
+    ```
+    #!/usr/bin/env python3
+
+    from scapy.all import *
+
+    IP_A = "0.0.0.0"
+    PORT = 9090
+
+    # socket.AF_INET: specifies the address family for IPv4
+    # socket.SOCK_DGRAM: the socket will be a UDP socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((IP_A, PORT))
+
+    while True:
+        data, (ip, port) = socket.recvfrom(2048)
+        print("{}:{} --> {}:{}".format(ip, port, IP_A, PORT))
+
+        # convert the data into an IP object
+        pkt = IP(data)
+        print("    Inside: {} -> {}".format(pkt.src, pkt.dst))
+    ```
+
+- run `tun_client.py` on the VPN Client (Host U)
+    - replace the `while` loop in `tun.py`
+    ```
+    # Create UDP socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    while True:
+        # Get a packet from the tun interface
+        packet = os.read(tun, 2048)
+        if packet:
+            # Send the packet via the tunnel
+            sock.sendto(packet, (SERVER_IP, SERVER_PORT))
+    ```
+
+- On Host U, i.e., the VPN Client: `ping 192.168.53.100`
+    ```
+    (VPN Server)
+    # ./tun_server.py
+    10.9.0.5:35657 --> 0.0.0.0:9090
+        Inside: 192.168.53.99 --> 192.168.53.100
+    10.9.0.5:35657 --> 0.0.0.0:9090
+        Inside: 192.168.53.99 --> 192.168.53.100
+    ...
+    ```
+    - data and data flow:
+        - user space --OS--> tun interface: ICMP packet
+        - tun interface --OS--> `tun_client.py`: ICMP packet (`192.168.53.99` -> `192.168.53.100`)
+        - `tun_client.py`(`10.9.0.5`) --Socket--> `tun_server.py`(`10.9.0.11`): ICMP packet (`192.168.53.99` -> `192.168.53.100`)
+
+- Configure the route table:
+    - `ip route add 192.168.60.0/24 dev he15enbug0`
+    - on Host U, `ping 192.168.60.5`, the ICMP packet will go through the tun interface
+
+## Task 4: Set Up the VPN Server
+- `tun_server.py`: forward the packet to its destination, this needs to be done through a TUN interface
+- subtasks (modify `tun_server.py`):
+    1. create a TUN interface
+    2. get data from the socket interface
+    3. write the packet to the TUN interface
+    ```
+    (just copy the code in tun.py)
+    ```
+- configure VPN Server as a gateway (enable the IP forwarding)
+    - set `net.ipv4.ip_forward=1` in `/etc/sysctl.conf`, active the changes `sudo sysctl -p`
+
+- run `tcpdump -i eth0` on Host V (`192.168.60.5`), it should receive ICMP packets from the tun interface (he15enbug0 `192.168.53.99`) on Host U
+
+## Task 5: Handling Traffic in Both Directions
+- In task 4, Host V can receive packets from Host U, but the reply will not get back to Host U
