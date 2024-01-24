@@ -267,3 +267,50 @@
 
 ## Task 5: Handling Traffic in Both Directions
 - In task 4, Host V can receive packets from Host U, but the reply will not get back to Host U
+- By running `tcpdump -i eth1` we can see that the reply pakets got to the server (`eth1: 192.168.60.11/24`), but it was dropped somewhere
+
+- Performance:
+    - Non-Blocking IO: idle loop wastes CPU time
+    - Blocking IO: block on one interface until data is ready
+    - IO Multiplexing: block on all interfaces altogether, and get notified when some of them are ready
+        1. [`select`](https://en.wikipedia.org/wiki/Select_(Unix))
+        2. [`poll`](https://en.wikipedia.org/wiki/Poll_(Unix))
+        3. [`epoll`](https://en.wikipedia.org/wiki/Epoll)
+- In this lab, we are going to use `select`
+- code:
+    ```
+    while True:
+        # parameters: 1. readable, 2. writable, 3. exceptional, (4. timeout)
+        ready, _, _ = select.select([sock, tun], [], [])
+
+        for fd in ready:
+            if fd is sock:
+                data, (ip, port) = sock.recvfrom(2048)
+                pkt = IP(data)
+                print("From socket <==: {} --> {}".format(pkt.src, pkt.dst))
+                
+                os.write(tun, bytes(pkt))
+
+            if(fd is tun):
+                packet = os.read(tun, 2048)
+                pkt = IP(data)
+                print("From socket <==: {} --> {}".format(pkt.src, pkt.dst))
+
+                sock.sendto(packet, (IP, PORT))
+    ```
+
+- Analysis: track the packets with `id=402, seq=1`
+    - timestamp, type, interface
+    - 58.162777, request, he15enbug0 (Client)
+
+    - 58.168203, request, tun_server0 (Server)
+    - 58.168222, request, eth1 (Server)  `192.168.60.11`
+
+    - 58.168239, request, eth0 (Host V)
+    - 58.168294, reply, eth0 (Host V)
+
+    - 58.168298, reply, eth1 (Server)  `192.168.60.11`
+    - 58.168300, reply, tun_server0 (Server)
+
+    - 58.169612, reply, he15enbug0 (Client)
+    
