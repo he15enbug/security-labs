@@ -183,3 +183,88 @@
         |
         Low Memory Addresses
         ```
+
+## Task 4: Level-3 Attack
+- Target Server: `10.9.0.7:9090` (64-bit)
+- `$rbp`:    `0x00007fffffffe6b0`
+- `&buffer`: `0x00007fffffffe5e0`
+- difficulty: in x64 architecture, only the address from `0x0000000000000000` to `0x00007FFFFFFFFFFF` is allowed, i.e., for each address (8 bytes), the highest 2 bytes are always zeros, and `strcpy()` stops copying when it sees a zero (`0x00`, i.e., `'\0'`)
+
+- **important**: use the 64-bit version shellcode
+- modify the code, and generate the `badfile`
+    ```
+    rbp = 0x00007fffffffe6b0
+    ret = rbp + 30
+    offset = rbp - buf_addr + 8
+
+    content[offset:offset+8] = (ret).to_bytes(8, byteorder='little')
+    ```
+- try `cat badfile | nc 10.9.0.7 9090`, didn't work
+    - open `badfile` with Bless hex editor, find the return address: `8E 5A 07 CA FD 7F 00 00` (the byte order is little-endian, e.g., the least significant byte is in the lowest memory address)
+    - the problem was caused by `00`, which was seen as `'\0'` in `strcpy()`
+- solution: put the shellcode at the begining of the buffer
+    ```
+    start = 0 # put the shellcode at the begining of the buffer
+    content[start:start + len(shellcode)] = shellcode
+
+    ret    = buf_addr # retrun to the begining of the buffer
+    offset = rbp - buf_addr + 8 # The return address should be stored next to the ebp 
+
+    # Use 8 for 64-bit address
+    content[offset:offset+8] = (ret).to_bytes(8,byteorder='little')
+    ```
+
+## Task 5: Level-4 Attack
+- Target Server: `10.9.0.8:9090` (64-bit)
+- Similar to level-3, with a smaller buffer size, not enough for the shellcode
+- solution: put the shellcode to elsewhere
+    - in the main function of `stack.c`, there is another buffer `char str[517]`, the input will also be stored there, brute-force to figure out the address of it, and return to somewhere before the shellcode
+    - to improve the chance of success, put the shellcode at the end of `str`, as long as we return to somewhere between the first and the last valid return address, the shellcode can be executed
+    - the first valid return address (also `&str`)
+    - the last valid return address (where the shellcode begins)
+        ```
+        High Memory Addresses
+        |          +---------------------+ 
+        |          |        ...          |
+        |          |---------------------|        
+        |          |                     |
+        |          |     Shellcode       |
+        |          |                     |
+        |          +---------------------+  <-- last valid return address
+        |          |        NOPs         |
+        |          |        NOPs         | 
+        |          |        NOPs         |
+        |          +---------------------+  <-- first valid return address
+        |          |        ...          |
+        |          +---------------------+
+        |          |        ...          |
+        |          +---------------------+
+        |          |    Unused Space     |
+        |          +---------------------+
+        Low Memory Addresses
+        ```
+    - make a quick estimation on the range of valid return address
+        - the size of the shellcode is `165 bytes`, so the size of the NOP area is `352 bytes = 517 bytes - 165 bytes`, the goal is to make return address in this `352 bytes` area
+        - the call chain is: `main` --> `dummy_function` --> `bof`
+        - in `dummy_function`:
+            - parameter `char *str` - size: `8 bytes`
+            - local variable `char dummy_buffer[1000]` - size: `1000`
+        - there are also some other data like the previous rbp or return address, suppose they are `x bytes` in total, `x` is small
+
+        - the valid return address is approximately `[rbp + 1008 + x, rbp + 1008 + x + 352]`
+
+        - make a guess:
+            - if `x == 0`, the range is `[rbp + 1008, rbp + 1360]`
+            - if `x == 100`, the range is `[rbp + 1108, rbp + 1460]`
+            - take a value in `[rbp + 1108, rbp + 1360]`, it is likely to success
+            - try `rbp + 1300`, it works!
+
+## Task 6: Address Randomization
+- turn on the countermeasure, ASLR, the Address Layout Randomization
+    - `sudo /sbin/sysctl -w kernel.randomize_va_space=2`
+- try `echo hello` on multiple times in level-1 and level-3, each time the ebp/rbp and address of buffer will be different
+
+- On level-1 server (`10.9.0.5`, `32-bit`): 
+    - brute-force
+
+## Task 7: Other Countermeasures
