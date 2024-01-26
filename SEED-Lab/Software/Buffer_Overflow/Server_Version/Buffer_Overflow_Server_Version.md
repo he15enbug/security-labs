@@ -226,13 +226,13 @@
         High Memory Addresses
         |          +---------------------+ 
         |          |        ...          |
-        |          |---------------------|        
+        |          |---------------------|  <-- end of str     
         |          |                     |
-        |          |     Shellcode       |
+        |          |      Shellcode      |  (165 bytes)
         |          |                     |
         |          +---------------------+  <-- last valid return address
         |          |        NOPs         |
-        |          |        NOPs         | 
+        |          |        NOPs         |  (352 bytes)
         |          |        NOPs         |
         |          +---------------------+  <-- first valid return address
         |          |        ...          |
@@ -264,7 +264,64 @@
     - `sudo /sbin/sysctl -w kernel.randomize_va_space=2`
 - try `echo hello` on multiple times in level-1 and level-3, each time the ebp/rbp and address of buffer will be different
 
+- important information: on `32-bit` linux machines, only `19-bit` can be used for address randomization
 - On level-1 server (`10.9.0.5`, `32-bit`): 
-    - brute-force
+    - run several times with benign inputs, randomly pick one of the ebp and buffer address
+    - the payload and the stack layout:
+        ```
+        High Memory Addresses
+        |          +---------------------+ 
+        |          |        ...          |
+        |          |---------------------|    
+        |          |                     |
+        |          |      Shellcode      |
+        |          |                     |
+        |          +---------------------+
+        |          |        NOPs         |
+        |          |        NOPs         |
+        |          |        NOPs         |
+        |          +---------------------+
+        |          |    Return Address   |
+        |          +---------------------+
+        |          |        ...          |
+        |          |    Return Address   |
+        |          |        ...          |
+        |          +---------------------+
+        |          |    Unused Space     |
+        |          +---------------------+
+        Low Memory Addresses
+        ```
+
+    - brute-force: got a reverse shell after 2 minutes and 20 seconds
 
 ## Task 7: Other Countermeasures
+### Task 7.a: StackGuard
+- remove `-fno-stack-protector` flag
+- recompile `stack.c`
+- local test: 
+    ```
+    $ ./stack-L1 < badfile
+    Input size: 517
+    Frame Pointer ...
+    Buffer's address ...
+    *** stack smashing detected ***: terminated
+    Aborted
+    ```
+
+### Task 7.b: Non-executable Stack
+- In Ubuntu OS, the binary images of programs and shared libraries must declare whether they require executable stacks or not, i.e., they need to mark a field in the program header
+- Kernel or dynamic linker uses this marking to decide whether to make the stack of this program executable or non-executable
+- by default, `gcc` set this marking non-executable
+- we can manually set it: use `-z noexecstack` or `-z execstack` flag in the compilation
+
+- Compile `call_shellcode.c` into `a32.out` and `a64.out` without `-z execstack`
+    ```
+    $ gcc -m32 -o a32.out call_shellcode.c
+    $ gcc -o a64.out call_shellcode.c
+    $ ./a32.out
+    Segmentation fault
+    $ ./a64.out
+    Segmentation fault
+    ```
+
+- **Defeating** the non-executable stack countermeasure: this countermeasure only makes it impossible to run shellcode on the stack, but there are other ways to run malicious code after exploiting a buffer-overflow vulnerability, e.g., the *return-to-libc* attack (There is a separate lab for this attack)
