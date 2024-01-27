@@ -121,7 +121,77 @@
         uid=1000(seed) gid=1000(seed) euid=0(root) groups=1000(seed),4(adm),24(cdrom),...
         ```
 
-## Task 7: 
+## Task 7: `LD_PRELOAD` and `Set-UID` Programs
+- environment variables `LD_*` (e.g., `LD_PRELOAD`, `LD_LIBRARY_PATH`) influence the behavior of dynamic loader/linker
+- dynamic loader/linker is the part of an OS that loads (from persistent storage to RAM) and links the shared libraries needed by an executable at run time
+- in Linux, there are `ld.so` and `ld-linux.so`
+- `LD_LIBRARY_PATH`: a colon-separated set of directories where libraries should be searched for first, before the standard set of directories
+- `LD_PRELOAD`: specifies a list of additional, user-specified, shared libraries to be loaded before all others, this will be used in this lab
 
 
+- steps
+    1. build a dynamic link library using `mylib.c`
+        ```
+        #include <stdio.h>
+        void sleep(int s) {
+            printf("I am not sleeping!\n");
+        }
+        ```
+    2. compile `mylib.c`
+        ```
+        $ gcc -fPIC -g -c mylib.c
+        $ gcc -shared -o libmylib.so.1.0.1 mylib.o -lc
+        ```
+    3. set `LD_PRELOAD`
+        ```
+        $ export LD_PRELOAD=./libmylib.so.1.0.1
+        ```
+    4. compile `myprog.c`
+        ```
+        #include <unistd.h>
+        int main() {
+            sleep(1);
+            return 0;
+        }
+        ```
+    5. compile and run `myprog.c`, with different configurations
+        1. `myprog` is a regular program
+            ```
+            $ ./myprog
+            I am not sleeping!
+            ```
+        2. `myprog` is a `Set-UID` root program, run it as `seed`
+            ```
+            $ sudo chown root myprog
+            $ sudo chmod 4755 myprog
+            $ ./myprog
+            (Slept for 1 second)
+            $
+            ```
+        3. `myprog` is a `Set-UID` root program, export `LD_PRELOAD` as `root` and run it
+            ```
+            # export LD_PRELOAD=./libmylib.so.1.0.1
+            # ./myprog
+            I am not sleeping!
+            ```
+        4. `myprog` is a `Set-UID` user1 program, run it as `seed`
+            ```
+            (run the following command as seed)
+            $ sudo useradd user1
+            $ sudo passwd user1
+            New password:
+            Retype new password:
+            passwd: password updated successfully
+            $ sudo chown user1 myprog
+            $ sudo chmod 4755 myprog
+            $ export LD_PRELOAD=./libmylib.so.1.0.1
+            $ ./myprog
+            (Slept for 1 second)
+            $
+            ```
+- conclusion: the environment variable `LD_PRELOAD` will be ignored by the dynamic linker/loader when the effective user id is different from the real user id
+
+## Task 8: 
+
+## Task 9: Capabilities
 
