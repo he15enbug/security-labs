@@ -28,7 +28,7 @@
     - Set-UID Version
     - Server Version **[Finished]**
 
-- Return-to-Libc Lab
+- Return-to-Libc Lab **[Finished]**
 
 - Shellcode Development Lab
 
