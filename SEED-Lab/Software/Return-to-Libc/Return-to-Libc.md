@@ -141,7 +141,7 @@
             badfile       Makefile   prtenv.c  retlib.c
             Segmentation fault (<---- THE PROGRAM DIDN'T END NORMALLY)
             ```
-        - we can see that `exit()` ensures the program to end normally
+        - we can see that `exit()` ensures the program to end normally, the reason is that after `system()` finishes, it runs `ret` instruction, pop the address of `exit()` and return to that address
     2. change the length of name of `retlib` (not work anymore, because the name of the program will be stored in the arguments, changing the length of it may cause some addresses to change)
         ```
         $ ./retlib
