@@ -27,6 +27,7 @@
     - Set-UID Version
     - Server Version **[Finished]**
 - Return-to-Libc Lab **[Finished]**
+- Race Condition Vulnerability Lab
 - Format-String Lab
 
 ### Mobile Security
