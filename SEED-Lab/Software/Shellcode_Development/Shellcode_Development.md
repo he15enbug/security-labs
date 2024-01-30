@@ -378,4 +378,48 @@
     ```
 
 ## Task 3: Writing Shellcode (Approach 2)
+- another approach to get the shell string and the `argv[]` array is to dynamically construct them on the stack, and use the stack pointer register to get their addresses
+- before we need a string, we can put it in the stack, and `rsp` is the address of it
 
+### Task 3.a: Revise the example code `another_sh64.s` to run `/bin/bash -c "echo hello; ls -la"`
+- it's all about calculating offset, here is the code
+    ```
+    section .text
+        global _start
+    _start:
+        xor  rdx, rdx       ; 3rd argument (stored in rdx)
+        push rdx
+
+        mov rax, 'la'
+        push rax
+        mov rax, 'lo; ls -'
+        push rax
+        mov rax, 'echo hel'
+        push rax
+
+        mov rax, '-c'
+        push rax
+
+        push rdx
+        mov rax, 'h'
+        push rax
+        mov rax, '/bin/bas'
+        push rax
+        mov rdi, rsp        ; 1st argument (stored in rdi)
+
+        push rdx
+        lea  rax, [rdi+32]
+        push rax
+        lea  rax, [rdi+24]
+        push rax
+        push rdi
+        mov rsi, rsp        ; 2nd argument (stored in rsi)
+
+        xor  rax, rax
+        mov  al, 59        ; execve()
+        syscall
+    ```
+- one thing we need to take care is that when moving `'ABCDEFGH'` to `rax`, the storing direction is that `'A'` will be put on the least significant byte
+
+### Task 3.b: Compare 2 approaches
+- the code of approach 2 is shorter, and it doesn't require `--omagic`, because we will not modify data in the code segment
