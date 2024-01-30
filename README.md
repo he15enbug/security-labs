@@ -21,16 +21,13 @@
 
 
 ### Software Security
-
 - Environment Variable and Set-UID Lab **[Finished]**
-
+- Shellcode Development Lab **[Finished]**
 - Buffer Overflow
     - Set-UID Version
     - Server Version **[Finished]**
-
 - Return-to-Libc Lab **[Finished]**
-
-- Shellcode Development Lab
+- Format-String Lab
 
 ### Mobile Security
 
