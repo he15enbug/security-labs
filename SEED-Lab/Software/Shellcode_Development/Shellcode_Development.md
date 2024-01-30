@@ -258,3 +258,124 @@
             1. `mov rax, 0xffffffffffffff3b`
             2. `shl rax, 56` ---> `rax`: `0x3b00000000000000`
             3. `shr rax, 56` ---> `rax`: `0x000000000000003b`
+
+### Task 2.c: Run a more complicated command
+- run `execve("/bin/bash", {"-c", "echo hello; ls -la", 0}, 0)`
+- first, construct these strings in `two`
+    ```
+    two:
+        call one                                                                   
+        db '/bin/bash'         , 0xff ; 10 bytes
+        db '-c'                , 0xff ;  3 bytes
+        db 'echo hello; ls -la', 0xff ; 19 bytes
+        db 'AAAAAAAA'      ; 8 bytes, place holder for argv[0] 
+        db 'BBBBBBBB'      ; 8 bytes, Place holder for argv[1]
+        db 'CCCCCCCC'      ; 8 bytes, Place holder for argv[2]
+        db 'DDDDDDDD'      ; 8 bytes, Place holder for argv[3]
+    ```
+- as long as we know the offset of these strings, we can put their addresses into these placeholders
+    ```
+    mov [rbx+32], rbx
+    lea rax     , [rbx+10]
+    mov [rbx+40], rax
+    lea rax     , [rbx+13]
+    mov [rbx+48], rax
+    xor rax     , rax
+    mov [rbx+56], rax
+    ```
+- compile and run `comp_sh64.s`
+    ```
+    $ nasm -g -f elf64 -o comp_sh64.o comp_sh64.s
+    $ ld --omagic -o comp_sh64 comp_sh64.o
+    $ ./comp_sh64
+    hello
+    total 144
+    drwxrwxr-x 3 seed seed 4096 Jan 30 06:52 .
+    ...
+    ```
+- the memory layout before `syscall`
+    ```
+    High Memory Addresses
+    |          +----------------------+ 
+    |          |        ...           |
+    |          +----------------------+ 64
+    |          |  0x0000000000000000  |
+    |          +----------------------+ 56
+    |          |       rbx+13         |
+    |          +----------------------+ 48
+    |          |       rbx+10         |
+    |          +----------------------+ 40
+    |          |        rbx           |
+    |          +----------------------+ 32
+    |          |"echo hello; ls -la\0"| (19 bytes) 
+    |          +----------------------+ 13
+    |          |        "-c\0"        | (3 bytes)
+    |          +----------------------+ 10
+    |          |     "/bin/bash\0"    | (10 bytes)
+    |          +----------------------+ 0 (offset to rbx)
+    |          |       call one       |    
+    |          +----------------------+
+    |          |         ...          |    
+    |          +----------------------+
+    Low Memory Addresses
+    ```
+
+### Task 2.d: Passing environment variables
+- the 3rd parameter of `execve()` is a pointer to the environment variable array, and it allows us to pass environment variables to the program
+- write `myenv64.s` that executes `/usr/bin/env` to print out the environment variables, we need to construct an environment variable array on the stack, and store the address of this array to the `rdx` register
+- this task is similar to task `2.c`, just calculate the right places to put the data
+    ```
+    section .text
+      global _start
+	    _start:
+		    BITS 64
+		    jmp short two
+	    one:
+            pop rbx           
+
+            ; set terminating 0x00 for strings
+            xor al, al
+            mov [rbx+12], al
+            mov [rbx+22], al
+            mov [rbx+32], al
+            mov [rbx+48], al
+
+            ; fill placeholders for argv
+            mov [rbx+56], rbx
+            xor rax     , rax
+            mov [rbx+64], rax
+
+            ; fill placeholders for env
+            lea rax     , [rbx+13]
+            mov [rbx+72], rax
+            lea rax     , [rbx+23]
+            mov [rbx+80], rax
+            lea rax     , [rbx+33]
+            mov [rbx+88], rax
+            xor rax     , rax
+            mov [rbx+96], rax
+
+
+            mov rdi, rbx
+            lea rsi, [rbx+56]
+            lea rdx, [rbx+72]
+            mov rax, 0x1111113c
+            sub rax, 0x11111101; rax = 59
+            syscall
+        two:
+            call one
+            db '/usr/bin/env'      , 0xff ; 13 bytes
+            db 'aaa=hello'         , 0xff ; 10 bytes
+            db 'bbb=world'         , 0xff ; 10 bytes
+            db 'ccc=hello world'   , 0xff ; 16 bytes
+
+            db 'AAAAAAAA'      ; 8 bytes, place holder for argv[0]
+            db 'AAAAAAAA'      ; 8 bytes, place holder for argv[1]
+            db 'BBBBBBBB'      ; 8 bytes, Place holder for env[0]
+            db 'CCCCCCCC'      ; 8 bytes, Place holder for env[1]
+            db 'DDDDDDDD'      ; 8 bytes, Place holder for env[2]
+            db 'EEEEEEEE'      ; 8 bytes, Place holder for env[3]
+    ```
+
+## Task 3: Writing Shellcode (Approach 2)
+
