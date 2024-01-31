@@ -143,7 +143,45 @@
     ```
 
 ## Task 3: Countermeasures
+### Task 3.A: Principle of least privilege
+- the fundamental problem in this lab is the violation of the *Principle of Least Privilege*, using `access()` to limit the user's power is not a proper way, instead we can use `setuid()` system call to temporarily disable the root privilege, and later enable it when necessary
+- to make it easier to check whether our fix works, we first remove the `access()`, and try open a file directly, if we set a symlink from `/tmp/XYZ` to `/etc/passwd` and make `test` a `Set-UID` root program, it can append the input to `/etc/passwd`
+    ```
+    ...
+    fp = fopen(fn, "a+");
+    if(!fp) {
+        perror("Open failed");
+        exit(1);
+    }
+    ...
+    ```
+- now, we use `setuid` to revoke its root privilege, for convenient, add `system("/bin/id")` after setting the euid to check whether it works
+    ```
+    setuid(getuid()); // temporarily set effective uid to real uid
+    system("/bin/id");
+    fp = fopen(fn, "a+");
+    // write to fp here
+    ...
+    seteuid(0); // try to regain root privilege, but won't success
+    system("/bin/id");
+    ```
+- test
+    ```
+    $ gcc -o fixed_vulp fixed_vulp.c 
+    $ sudo chown root fixed_vulp
+    $ sudo chmod 4755 fixed_vulp
 
-### Task 3.A: Principle of least privileges
+    $ ln -sf /etc/passwd /tmp/XYZ
+    $ ./fixed_vulp 
+    1
+    uid=1000(seed) gid=1000(seed) groups=1000(seed), ...
+    Open failed: Permission denied    <--- failed to open /etc/passwd
+
+    $ ln -sf /tmp/XXX /tmp/XYZ
+    $ ./fixed_vulp 
+    1
+    uid=1000(seed) gid=1000(seed) groups=1000(seed), ...
+    uid=1000(seed) gid=1000(seed) groups=1000(seed), ... <--- seteuid(0) failed, because a program without root privilege cannot make itself a Set-UID root program
+    ```
 
 ### Task 3.B: Using Ubuntu's built-in scheme
