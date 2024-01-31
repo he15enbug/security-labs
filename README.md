@@ -27,7 +27,8 @@
     - Set-UID Version
     - Server Version **[Finished]**
 - Return-to-Libc Lab **[Finished]**
-- Race Condition Vulnerability Lab
+- Race Condition Vulnerability Lab **[Finished]**
+- Dirty COW Attack Lab
 - Format-String Lab
 
 ### Mobile Security

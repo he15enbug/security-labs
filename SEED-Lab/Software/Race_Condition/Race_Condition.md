@@ -84,11 +84,11 @@
     ```
     ```
     $ ./target_process.sh
-    Permission denied
-    Permission denied
-    Permission denied
-    Permission denied
-    Permission denied
+    No permission
+    No permission
+    No permission
+    No permission
+    No permission
     STOP... The passwd file has been changed
     $ su test
     Password:
@@ -134,8 +134,8 @@
     ```
     ```
     $ ./target_process.sh
-    Permission denied
-    Permission denied
+    No permission
+    No permission
     STOP... The passwd file has been changed
     $ su test
     Password:
@@ -185,3 +185,42 @@
     ```
 
 ### Task 3.B: Using Ubuntu's built-in scheme
+- enable Ubuntu's built-in protection `$ sudo sysctl -w fs.protected_symlinks=1`
+- do the following test
+    1. can we create symlinks `ln -sf /etc/passwd /tmp/XYZ` (Yes)
+        ```
+        $ rm /tmp/XYZ
+        $ ln -sf /etc/passwd /tmp/XYZ
+        $ ls -l /tmp/XYZ
+        lrwxrwxrwx 1 seed seed 11 Jan 31 04:19 /tmp/XYZ -> /etc/passwd
+        ```
+    2. can our improved attack success (No, but the printout info changes)
+        ```
+        $ ./imp_atk.c
+        ```
+        ```
+        $ ./target_process.sh
+        No permission
+        No permission
+        Open failed: Permission denied <--- new information
+        ```
+        - when we see `Open failed: Permission denied`, it means we pass the check of `access()`, and start to open `/tmp/XYZ` (which is a symlink to `/etc/passwd`), but we failed, because "symlinks in world-writable directories (in this case, it's `tmp`) cannot be followed if the follower and directory owner do not match the symlink owner"
+
+- at the lab setup part, we also disabled another protection, to test it, we enable it, and disable `fs.protected_symlinks` again
+    - `$ sudo sysctl -w fs.protected_symlinks=0`
+    - `$ sudo sysctl fs.protected_regular=1`
+    - this protection prevents `root` from writing to files in `/tmp` that are owned by other users
+    - test (please backup /etc/passwd before echo hello to it)
+        ```
+        (current user: root)
+        # echo hello > /tmp/XXX
+        bash: /tmp/XXX: Permission denied
+        # ls -l /tmp/XYZ
+        lrwxrwxrwx 1 seed seed 11 Jan 31 04:19 /tmp/XYZ -> /etc/passwd
+        # echo hello > /tmp/XYZ
+        #     <--- no error information
+        # cat /etc/passwd
+        hello <--- root can still write to a symlink owned by seed
+        # cp /etc/passwd_backup /etc/passwd <-- recover passwd from backup
+        ```
+    - the conclusion is that the protection of `fs.protected_regular=1` can not prevent the attack
