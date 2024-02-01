@@ -242,4 +242,6 @@
     ```
 
 ## Task 6: Fixing the Problem
-- a straight forward fix for the problem is to modify `printf(msg)` to `printf("%s", msg)`
+- a straight forward fix for the problem is to modify `printf(msg)` to `printf("%s", msg)`, after recompiling the server-code
+    - the warning goes away
+    - all attacks fail
