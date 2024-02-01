@@ -29,7 +29,7 @@
 - Return-to-Libc Lab **[Finished]**
 - Race Condition Vulnerability Lab **[Finished]**
 - Format-String Lab **[Finished]**
-- Dirty COW Attack Lab (Ubuntu)
+- Dirty COW Attack Lab (Ubuntu 12.04)
 
 ### Mobile Security
 
