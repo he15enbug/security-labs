@@ -123,6 +123,32 @@
         ```
 
 ## Task 3: Modifying the Server Program's Memory
+- target server `10.9.0.5`
+- objective: modify the value of the target variable at `0x11223344`, we have 3 sub-tasks
+
+### Task 3.A: Change the value to a different value
+- use `%n`, it will write the length of the printout to a specified address, if we can do `3.B`, we can do `3.A`
+### Task 3.B: Change the value to `0x5000`
+- the address of `target` is `0x080e5068`
+- use `%n`, to write `0x5000` to the target, we need to control the length of the output, we have already done this before with `%.8x`
+- make a calculation: the output consists of 1 address (`4` bytes), 62 number of format `%.8x` (`62*8=496` bytes), the last part should be `0x5000-496-4=19980` bytes, i.e., `%.19980x`
+- the target value (after) is indeed `0x5000`
+    ```
+    server-10.9.0.5 | ... The target variable's value (after):  0x00005000
+    ```
+
+### Task 3.C: Change the value to `0xAABBCCDD`
+- if we use the method in the previous sub-task, the server will need to print out a very large number (`0xAABBCCDD`) of bytes, instead, we can use `%hn` (or `%hhn`) that writes only 2 bytes (or 1 bytes) of data at a given address
+- use `%hn`, the payload looks like this: `<address><padding><address>%.8x%.8x...%.?x%hn%.?x%hn`
+- since `0xAABB` is less than `0xCCDD`, the first `%hn` should write `0xAABB` to the higher 2 bytes of `target`, and the second `%hn` writes to the lower 2 bytes of `target`
+- so, the first address should be `0x080e506a`, the second address should be `0x080e5068`, the padding can be any 4-byte value
+- calculate the value of `?`
+    - for the first `?`,it is `0xAABB-(62*8+3*4)=43199`
+    - for the second `?`, it is `0xCCDD-0xAABB=8738`
+- output
+    ```
+    server-10.9.0.5 | ... The target variable's value (after):  0xaabbccdd
+    ```
 
 ## Task 4: Inject Malicious Code into the Server Program
 
