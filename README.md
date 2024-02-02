@@ -34,7 +34,9 @@
 ### Mobile Security
 
 ### Blockchain
-- Blockchain Exploration Lab
+- Blockchain Exploration Lab **[Finished]**
+- Smart Contract Lab
+- Smart Contract Reentrancy Attack Lab
 
 ### Cryptography
 
