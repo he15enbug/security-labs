@@ -35,7 +35,7 @@
 
 ### Blockchain
 - Blockchain Exploration Lab **[Finished]**
-- Smart Contract Lab
+- Smart Contract Lab **[Finished]**
 - Smart Contract Reentrancy Attack Lab
 
 ### Cryptography

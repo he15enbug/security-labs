@@ -135,3 +135,14 @@
     - all of them works
 
 ## Task 5: Invoke Another Contract
+- use `Caller.sol` to invoke `Hello.sol`,  it needs to include an `interface` derived from the `Hello` contract
+- deploy `Hello` (at `0x600650Df7a3a4c66b21eaeF1e8eF0a6931aBc24b`)
+- deploy `Caller` (at `0x8ae2B877e6222632090B44EaEDC1eC3A6c85008B`)
+- invoke `invokeHello("0x600650Df7a3a4c66b21eaeF1e8eF0a6931aBc24b", 10)` in `Caller`
+    - succeed
+    - in `Hello`, invoke `getCounter`: `10`
+- invoke `invokeHello2("0x600650Df7a3a4c66b21eaeF1e8eF0a6931aBc24b", 2)` in `Caller`
+    - before invoking, ensure the balance of `Caller` is greater than `1 ETH` (I sent `3 ETH`, and the balance of `Hello` is `0`)
+    - succeed
+    - in `Hello`, invoke `getCounter`: `12`
+    - balance of `Hello`: `1 ETH`
