@@ -8,7 +8,11 @@
 ### System Security
 
 ### Web Security
-
+- Cross-site Scripting (XSS) Lab
+- Cross-site Request Forgery (CSRF) Lab
+- SQL Injection Lab
+- Clickjacking Lab
+- Shellshock Vulnerability Lab
 ### Network Security
 
 - Morris Worm
