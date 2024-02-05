@@ -62,4 +62,52 @@
     - use `<iframe src="http://www.seed-server.com">` to load Elgg inside the attacker's site, if we success, we can put the script inside the iframe, and use `elgg.session.user.name` and `elgg.session.user.guid` to get user name and guid
     - however, the Elgg website cannot be loaded in the iframe, the error information is `"To protect your security, www.seed-server.com will not allow Firefox to display the page if another site has embedded it. To see this page, you need to open it in a new window"`, there might be a countermeasure implemented in the Elgg application
 
-## Task: Defense
+## Defense
+- Initially, most applications put a secret token in their page, and by checking whether the token is present in the request or not, they can tell whether a request is a same-site request or a cross-site request, this is called `secret token` approach. More recently, most browsers have implemented a mechanism called `SameSite cookie`, which is intended to simplify the implementation of CSRF countermeasures
+
+## Task 4: Enabling Elgg's Countermeasures
+- web applications can embed a secret token in their pages, and all requests coming from these pages must carry this token, or they will be considered as a cross-site request, and will not have the same privilege as the same-site requests. Attacker will not be able to get this token, so their requests can be identified as cross-site requests
+- in Elgg, `__elgg_token` is the secret tokens, `__elgg_ts` is a timestamp, they will be validated before processing a request
+    ```
+    <input type="hidden" name="__elgg_ts" value="" />
+    <input type="hidden" name="__elgg_token" value="" />
+    ```
+    ```
+    $ts = time();
+    $token = elgg()->csrf->generateActionToken($ts);
+    echo elgg_view('input/hidden', ['name' => '__elgg_token', 'value' => $token]);
+    echo elgg_view('input/hidden', ['name' => '__elgg_ts', 'value' => $ts]);
+    ```
+- Elgg's security token is a md5 message digest of the site secret value (retrieved from database), timestamp, user session ID and random generated session string, the code for secret token generation in Elgg:
+    ```
+    public function generateActionToken($timestamp, $session_token='') {
+        if(!$session_token) {
+            $session_token = $this->session->get('__elgg_session');
+            if(!$session_token) {
+                return false;
+            }
+        }
+        return $this->hmac
+                    ->getHmac([(int) $timestamp, $session_token], 'md5')
+                    ->getToken();
+    }
+    ```
+- secret token validation: generate a md5 digest for `__elgg_ts` in the request and the session id, compare it to the `__elgg_token` in the request. Besides, check the `__elgg_ts`, ensure the token is not expired (default timeout is `2` hours)
+
+- enable this countermeasure, and login as Alice, then visit the attacker's website, we can get an error information: "Form is missing __token or __ts fields"
+    - add these 2 fields in the attacker's page, and put some random value, the attack cannot succeed, because the request cannot pass the validation
+    - if we go to Alice's profile in Elgg, inspect the page elements and find the value of `__elgg_ts` and `__elgg_token`, put them into the attacker's page, then visit this page, the attack can succeed
+    - in a real attack, the attacker cannot get these value, because the token is calculated from Alice's session id with a timestamp, and will only be put in the page when logging in as Alice, when visiting the attacker's page, the attacker cannot know the value of the token, and the corresponding timestamp. However, if the attacker can put a iframe (to load the Elgg's page) in the malicious page, and run a script inside, the script can get the value of `__elgg_ts` and `__elgg_token` inside the iframe, this is disabled by Elgg application, as mentioned in Task `3`
+
+## Task 5: Experimenting with the SameSite Cookie Method
+- most browsers have implemented a mechanism called SameSite cookie
+- when sending out requests, browsers will check this property, and decide whether to attach the cookie in a cross-site request, a web application can set a cookie as SameSite if it does not want the cookie to be attched to cross-site requests. For example, they can mark the session ID cookie as SameSite, so no cross-site request can use the session ID, and will therefore not be able to launch CSRF attacks
+- visit `10.9.0.5 www.example32.com`, 3 cookies will be set, `cookie-normal`, `cookie-lax`, and `cookie-strict`, there are 2 links on this page, link A points to a test page on `www.example32.com`, while link B points to a test page on `www.attacker32.com`, in each test page, we can send a GET or POST request back to `www.example32.com`, and we can see which cookie will be sent by the browser
+    - link A
+        - GET: `cookie-normal`, `cookie-lax`, `cookie-strict`
+        - POST: `cookie-normal`, `cookie-lax`, `cookie-strict`
+    - link B
+        - GET: `cookie-normal`, `cookie-lax`
+        - POST: `cookie-normal`
+- conclusion: for SameCookie, there are 2 types, `Lax` and `Strict`. Cross-site request will not carry `Strict` cookies. Cross-site POST request will not carry `Lax` cookies, but cross-site GET request can carry `Lax` cookies
+- in a CSRF attack, the victim visits the attacker's site, and triggers a request to the Elgg website, if the session ID cookie is marked as SameSite cookie, if it is `Strict`, the session id cookie will not be sent by the browser, and the request won't pass the validation
