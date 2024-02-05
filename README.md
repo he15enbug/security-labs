@@ -10,7 +10,7 @@
 ### Web Security
 - Cross-site Scripting (XSS) Lab **[Finished]**
 - Cross-site Request Forgery (CSRF) Lab **[Finished]**
-- SQL Injection Lab
+- SQL Injection Lab **[Finished]**
 - Clickjacking Lab
 - Shellshock Vulnerability Lab
 ### Network Security
