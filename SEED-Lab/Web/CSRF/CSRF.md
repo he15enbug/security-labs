@@ -111,3 +111,5 @@
         - POST: `cookie-normal`
 - conclusion: for SameCookie, there are 2 types, `Lax` and `Strict`. Cross-site request will not carry `Strict` cookies. Cross-site POST request will not carry `Lax` cookies, but cross-site GET request can carry `Lax` cookies
 - in a CSRF attack, the victim visits the attacker's site, and triggers a request to the Elgg website, if the session ID cookie is marked as SameSite cookie, if it is `Strict`, the session id cookie will not be sent by the browser, and the request won't pass the validation
+
+- How to fix the problem using SameSite cookie? In the web application, we can see there is a cookie (`Elgg=...`), we can find the place where it is set, and make it a strict SameSite cookie, then in `Csrf.php`, we can validate a request by checking whether it contains this cookie, if it doesn't, we can know the request is cross-site
