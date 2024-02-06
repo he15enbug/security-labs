@@ -27,6 +27,6 @@
         margin-left: 2.5%;
     }
     ```
-- if we click "Explore More", we will jump to `hacked.html`, with a hint: "You Have Been Hacked!!"
+- if we click "Explore Menu", we will jump to `hacked.html`, with a hint: "You Have Been Hacked!!"
 
 ## Task 3: Bust That Frame!
