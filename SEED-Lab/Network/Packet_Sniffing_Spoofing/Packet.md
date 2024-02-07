@@ -80,6 +80,94 @@
 ## Lab Task Set 2: Writing Programs to Sniff and Spoof Packets
 - in this task set, write programs using C
 ### Task 2.1: Writing Packet Sniffing Program
-- use `pcap` library
+- use `pcap` library, need to use `-lpcap` when compiling
+- the sample code
+    ```
+    #include <pcap.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+
+    /* This function will be invoked by pcap for each captured packet, we can process each packet inside the function
+    */
+    void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
+        printf("Got a packet\n");
+    }
+    int main() {
+        pcap_t *handle; // this handle is used to manage the packet capture session
+        char errbuf[PCAP_ERRBUF_SIZE]; // hold error messages
+        struct bpf_program fp; // hold compiled BPF (Berkeley Packet Filter) program. BPF is a filtering mechanism used to specify which packets should be captured
+        char filter_exp[] = "icmp"; // hold filter expression
+        bpf_u_int32 net; // unsigned 32-bit integer, store the network address associated with the network interface used for packet capture
+
+        /* Step 1: Open live pcap session on NIC with name "br-06753fb4dff8"
+         * 1: whether to put the interface into promiscuous mode
+         * 1000: the timeout value in milliseconds for capturing packets
+         */
+        handle = pcap_open_live("br-06753fb4dff8", BUFSIZ, 1, 1000, errbuf);
+
+        /* Step 2: Compile filter_exp into BPF psuedo-code
+         * &fp: will be filled in with the compiled filter program
+         * 0: typically set to 0 for backward compatibility and is reserved for future use, can be safely ignored for now
+         * net: the network mask of the network on which packets are being captured
+         */
+        pcap_compile(handle, &fp, filter_exp, 0, net);
+        if(pcap_setfilter(handle, &fp) != 0) {
+            pcap_perror(handle, "Error:");
+        }
+
+        /* Step 3: Capture packets
+         * -1: `pcap_loop()` should loop indefinitely
+         * NULL: a pointer to user data that can be passed to the callback function, in this case, no data is passed
+         */
+        pcap_loop(handle, -1, got_packet, NULL);
+
+        pcap_close(handle); // Close the handle
+        return 0;
+    }
+    ```
+#### Task 2.1A: Understand How a Sniffer Works
+- write a sniffer program to print out the source and destination IP addresses of each captured packet
+    ```
+    struct ethheader* eth = (struct ethheader*) packet;
+    if(ntohs(eth->ether_type) == 0x0800) { // 0x0800 is IP type
+        struct ipheader* ip= (struct ipheader*) (packet + sizeof(struct ethheader));
+        printf("From: %s\n", inet_ntoa(ip->iph_sourceip));
+        printf("  To: %s\n", inet_ntoa(ip->iph_destip));
+    }
+    ```
+- describe the sequence of the library calls that are essential for sniffer programs
+    1. open live session on a interface
+    2. compile the filter expression to BPF program
+    3. define a function to process the captured packet
+    4. run the loop to capture packets, and process them with the function defined in previous step
+    5. close the session
+
+- why root privilege is needed to run a sniffer program? Where does the program fail if it is executed without root privilege
+    - without root privilege, we can only run `pcap_open_live()`, then there will be a `Segment Fault` error. This is because when using `pcap` to sniff packets, the program needs low-level access to the network interface
+
+- turn on and off the promiscuous mode in the sniffer program. The value `1` of the third parameter in `pcap_open_live()` turns on the promiscuous mode (and use `0` to turn it off). Demonstrate the difference when this mode is on and off. Use the following command to check whether an interface's promiscuous mode is on or off (look at the `promiscuity`'s value)
+    - `# ip -d link show dev br-537c81d8b33b | grep promiscuity` (I restarted the container, so the network interface name changed)
+    - run the sniff program on `10.9.0.1`, and test `ping 10.9.0.5` on host `10.9.0.6`
+    - on
+        - `promiscuity` is 1, can capture the packets between `10.9.0.5` and `10.9.0.6`
+    - off
+        - `promiscuity` is 0, cannot capture any packets
+    - run the sniff program, this time, test `ping 10.9.0.99` on host `10.9.0.6`, this IP address is a non-existing IP on the LAN, host `10.9.0.6` will broadcast ARP packets to ask for the target host, no matter whether this mode is on, the program is able to capture the ARP packets
+    - run the sniff program, `ping 10.9.0.1` on host `10.9.0.6`, in both cases the packets and reply packets are captured
+    - the difference when promiscuous mode is on and off is that when this mode is off, the program can only capture packets to or from the address of the host that is running it
+
+#### Task 2.1B: Writing Filters
+- capture the ICMP packets between two specific hosts
+    - `"icmp and host 10.9.0.5 and host 10.9.0.6"`
+- capture the TCP packets with destination port number in the range from 10 to 100
+    - `"tcp dst portrange 10-100"`
+    - test this on `10.9.0.6` using command `echo "test" | nc -w1 10.9.0.5 10`
+#### Task 2.1C: Sniffing Passwords
+- show how to use sniffer program to capture the password when somebody is using `telnet` on the network that we are monitoring (print out the data part of a TCP packet)
+    ```
+    
+    ```
+
+
 ### Task 2.2: Spoofing
 ### Task 2.3: Sniff and then Spoof
