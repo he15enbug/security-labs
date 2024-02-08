@@ -164,10 +164,109 @@
     - test this on `10.9.0.6` using command `echo "test" | nc -w1 10.9.0.5 10`
 #### Task 2.1C: Sniffing Passwords
 - show how to use sniffer program to capture the password when somebody is using `telnet` on the network that we are monitoring (print out the data part of a TCP packet)
-    ```
-    
-    ```
-
+    - core code: get the payload in TCP packet
+        ```
+        // remember to use ntohs() to convert the byte order
+        int size_data = ntohs(ip->iph_len) - sizeof(struct ipheader) - sizeof(struct tcpheader);
+        // skip ethernet header, IP header, and TCP header
+        unsigned char *data = (unsigned char* ) (packet + sizeof(struct ethheader) + sizeof(struct ipheader) + sizeof(struct tcpheader));
+        // for convenience, also write the data to a file
+        for(int i = 0; i < size_data; i++) {
+            if(file != NULL) fwrite(data, sizeof(char), 1, file);
+            if(isprint(*data)) printf("%c", *data);
+            else printf(".");
+            data++;
+        }
+        ```
+- tips: when dealing with some `4-byte` lengths (e.g., ip packet length, which is an unisigned short integer), we need to use `ntohs()` to convert the representation from big endian (network byte order) to little endian (our host byte order), but we shouldn't apply `ntohs()` to the ip header length, because it is `1 byte`
+- test: use Scapy to send a TCP packet with data `"this is a test"`
+    - construct IP, TCP, and data (a string), then `send(ip/tcp/data);`
+    - in the printout of the sniff program, the string `"this is a test"` will be printed out
+- sniffing the password: when `10.9.0.6` tried to login to `10.9.0.5` using `telnet 10.9.0.5 23`, it will provide the user name and the password, in the sniff program, use `"tcp and host 10.9.0.6 and host 10.9.0.5"` to capture only TCP packets between `10.9.0.6` and `10.9.0.5`
+    - first, try this password `++++++++`, in the output file of the sniff program (open it with a hex reader), we cannot found a string `"++++++++"`, but we can find several character `+`, this is because when typing the password, `10.9.0.6` will send multiple TCP packets, instead of contain all characters of the password in a single packet, because `telnet` operates in a character-at-a-time mode, meaning that each keystroke is immediately transmitted to the server
+    - each character is sent as the last byte of the payload in a packet, we can recover the password by observing a sequence of packets, e.g., if the password is `dees`, we can recover it from the payload of the following packets
+        ```
+        01 01 08 0A 30 97 B8 88 92 68 52 B9 64 <---- last byte: 0x64 ('d')
+        01 01 08 0A 30 97 C3 46 92 68 72 C3 65 <---- last byte: 0x65 ('e')
+        01 01 08 0A 30 97 CB 37 92 68 7D 56 65 <---- last byte: 0x65 ('e')
+        01 01 08 0A 30 97 D6 7F 92 68 85 47 73 <---- last byte: 0x73 ('s')
+        ```
+    - how to know which packets the password is from: these packets are captured after a packet from server to client with string `"Password:"` in its payload, and before a packet with `"Welcome to Ubuntu"` in its payload, and the password should consists of printable character
 
 ### Task 2.2: Spoofing
+- when a normal user sends out a packet, the OS usually don't allow users to set all the fields in the protocol headers (such as TCP, UDP, and IP headers). The OS only allow users to set a few fields, such as destination IP address, the destination port number, etc. However, if users have the root privilege, they can set any arbitrary field in the packet headers, this is called packet spoofing, and can be done through *raw sockets*
+- using raw sockets involves 4 steps: 1. create a raw socket, 2. set socket option, 3. construct the packet, and 4. send out the packet through the raw socket
+- a sample skeleton
+    ```
+    int sd;
+    struct sockaddr_in sin;
+    char buffer[1024];
+
+    /* Create a raw socket with IP protocol
+     * The IPPROTO_RAW parameter tells the system that the IP header is already included
+     * this prevents the OS from adding another IP header 
+     * returns a socket descriptor */
+    sd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if(sd < 0) {
+        perror("socket() error");
+        exit(-1);
+    }
+    /* This data structure is needed when sending the packets using sockets
+     * Normally, we nned to fill out several fields, but for raw sockets, we only need to
+     * fill out this one field */
+    sin.sin_family = AF_INET;
+
+    // Construct the IP packet using buffer[]
+    // - construct the IP header ...
+    // - construct the TCP/UDP/ICMP header ...
+    // - fill in the data part if needed ...
+    // pay attention to the network/host byte order
+
+    /* Send out the IP packet
+     * ip_len is the actual size of the packet */
+     if(sendto(sd, buffer, ip_len, 0, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+        perror("sendto() error");
+        exit(-1);
+     }
+    ```
+#### Task 2.2A: Write a spoofing program
+- spoof an IP packet
+- fill the IP header
+    ```
+    struct ipheader* ip  = (struct ipheader *) buffer;
+    // fill in the IP header
+    ip->iph_ihl             = 5;
+    ip->iph_ver             = 4;
+    ip->iph_ttl             = 20;
+    ip->iph_sourceip.s_addr = inet_addr(SRC_IP); // Source IP
+    ip->iph_destip.s_addr   = inet_addr(DEST_IP);  // Dest IP
+    ip->iph_protocol        = IPPROTO_TCP; // The value is 6.
+    // mind the byte order!
+    ip->iph_len             = htons(sizeof(struct ipheader));
+    // ip->iph_chksum will be set by the system
+    ```
+- this packet will be captured on Wireshark
+#### Task 2.2B: Spoof an ICMP Echo Request
+- besides filling in the IP header, also need to fill in the ICMP header
+    ```
+    struct icmpheader* icmp = (struct icmpheader *) (buffer + sizeof(struct ipheader));
+
+    // fill in the ICMP header
+    icmp->icmp_type   = 8; // 8: request, 0: reply
+    icmp->icmp_chksum = in_cksum((unsigned short *) icmp, sizeof(struct icmpheader));
+    ```
+- By running this program we sent an ICMP request packet to `8.8.8.8`, and a reply packet was captured
+
+- If we set the length field of IP packet to an arbitrary value:
+    - if we set it smaller than `20` (the length of IP header), there will be an error when invoking `sendto`: `Invalid argument` (for IP packet), or a segment fault (for TCP packet)
+    - if we set it to a larger value, there won't be any error, but if it is a TCP packet, it may lose some information, and become an IP packet
+
+- Do we have to calculate the checksum for the IP header: No, the system will do it for us
+
+- Why do we need the root privilege to run the spoof program
+    - If the program is executed without root privilege, it will fail to create the raw socket, with the error information: `socket() error: Operation not permitted`
+
 ### Task 2.3: Sniff and then Spoof
+- combine the sniffing and spoofing techniques to implement a sniff-and-then-spoof program
+- the program runs on the attacker machine, and monitors the LAN through packet sniffing, whenever it sees an ICMP echo request, regardless of what the target IP address is, the program will immediately send out a spoofed echo reply packet
+- just combine the previous tasks `2.1` and `2.2B`

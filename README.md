@@ -15,7 +15,7 @@
 - Shellshock Vulnerability Lab **[Finished]**
 
 ### Network Security
-- Packet Sniffing and Spoofing
+- Packet Sniffing and Spoofing **[Finished]**
 - ARP Cache Poisoning Attack
 - ICMP Redirect Attack
 - TCP Attacks
