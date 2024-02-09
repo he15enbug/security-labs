@@ -18,7 +18,7 @@
 - Packet Sniffing and Spoofing **[Finished]**
 - ARP Cache Poisoning Attack
 - ICMP Redirect Attack
-- TCP Attacks
+- TCP Attacks **[Finished]**
 - The Mitnick Attack
 - Firewall Exploration Lab
 - Firewall Evasion Lab
