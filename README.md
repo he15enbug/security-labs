@@ -17,7 +17,7 @@
 ### Network Security
 - Packet Sniffing and Spoofing **[Finished]**
 - ARP Cache Poisoning Attack **[Finished]**
-- ICMP Redirect Attack
+- ICMP Redirect Attack **[Finished]**
 - TCP Attacks **[Finished]**
 - The Mitnick Attack
 - Firewall Exploration Lab

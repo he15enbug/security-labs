@@ -57,3 +57,38 @@
         - test: when all of these 3 values are set to `1`, launch the attack, on Wireshark, we will see 2 ICMP redirect packets, the first one is spoofed by the attacker, the second is from the malicious router to tell the victim that `10.9.0.11` is a router that can reach the destination
 
 ## Task 2: Launching the MITM Attack
+- after launching the ICMP redirect attack, all packets from the victim to `192.168.60.5` will be routed through the malicious router, we would like to modify these packets
+- before launching the MITM attack, start a TCP client and server program using `netcat`
+    ```
+    # nc -lp 9090 <--- on 192.168.60.5 as the server
+
+    # nc 192.168.60.5 9090 <--- on the victim machine as the client
+    ```
+- each line typed by the victim will be put into a TCP packet and sent to the server, which displays the message
+- *objective*: - replace the data with our first name (e.g., `123456789` -> `heisenbug`), the length of the modified data should be the same as the original data, or we will mess up the TCP sequence number, and hence the entire TCP connection
+- notice that when typing `ABC` and enter, there will be 4 bytes of data (`'ABC'` and `\n`), I kept the last byte `'\n'`
+- disable IP forwarding on the malicious router, otherwise, it will forward the packets it received
+- we need to filter out the packets sent by the malicious router itself
+    - `filter='tcp and src host 10.9.0.5 and dst host 192.168.60.5 and ether dst 02:42:0a:09:00:6f'`
+    - `02:42:0a:09:00:6f` is the MAC address of the malicious router, packets between the victim and `192.168.60.5` will go through the malicious router, this is done by setting the Ethernet destination as the malicious router's MAC address, so add `ether dst 02:42:0a:09:00:6f` to filter out packets sent from the malicious router
+- the code for modifying the payload of TCP packets from victim to destination server is the same as the code in ARP Poisoning Lab
+- result
+    - on the victim
+        ```
+        # nc 10.9.0.6 9090
+        123456789
+        xxx
+        ```
+    - on `192.168.60.5`
+        ```
+        # nc -lp 9090
+        heisenbug
+        hei
+        ```
+- *questions*
+    1. in the MITM program, you only need to capture `nc` traffics from one direction, indicate which direction and why
+        - we only need to capture traffics from the victim to the destination, because the routing cache of the destination is not modified, and the packets it sends to the victim will not go through the malicious router
+    2. in the MITM program, you can use A's (i.e., the victim's) IP or MAC address in the filter, one of the choices is not good and will cause issues, try both, and tell which choice is the good one
+        - since I have added the malicious router's MAC address as the Ethernet destination in the filter `ether dst 02:42:0a:09:00:6f`, it won't cause a problem when using either A's IP or MAC address in the filter, but if we didn't add `ether dst 02:42:0a:09:00:6f` to the filter, then using A's MAC address is better
+        - suppose we use A's IP address, the complete filter expression is `filter='tcp and src host 10.9.0.5 and dst host 192.168.60.5`, when the MITM program receives a packet X, it modifies it to packet Y, and sends it out. The problem is that Y's source IP is also A's IP, which means Y will also be captured by the program (at the same time, it will be sent to the destination), this will cause the program to send another packet, and it will be captured again... The result is that the amount of packets in the network will keep growing, although the victim only sends one packet X initially, this is called a *forwarding storm*
+        - if we use A's MAC in this case, since packet Y's Ethernet source is not A's MAC address but the malicious router's, it will not be captured by the program again, so there won't be a forwarding storm
