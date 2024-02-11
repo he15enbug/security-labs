@@ -198,8 +198,122 @@
         - in both cases, we are blocking incoming packets, we can use either `NF_INET_PRE_ROUTING` or `NF_INET_LOCAL_IN`, according to the printout information by `printInfo`, incomming packets will first reach `NF_INET_PRE_ROUTING`, so I used this hook to drop thoses packets at the first place
 
 ## Task 2: Experimenting with Stateless Firewall Rules
+- Linux has a built-in firewall, called `iptables`, which is also based on `Netfilter`. Technically, the kernel part implementation of the firewall is called `Xtables`, while `iptables` is a user-space program to configure the firewall. However, `iptables` is often used to refer to both the kernel-part implementation and the user-space program
 
+### Background of `iptables`
+- the `iptables` firewall is designed not only to filter packets, but also make changes to packets
+- to help manage these firewall rules for different purposes, `iptables` organizes all rules using a hierarchical structure: table, chain, and rules. There are several tables, each specifying the main purpose of the rules. For example, rules for packet filtering should be placed in `filter` table, while rules for making changes to packets should be placed in `nat` and `mangle` tables
+- each table contains several chains, each of which corresponds to a `netfilter` hook. Rules on the `FORWARD` chain are enforced at the `NF_INET_FORWARD` hook, and rules on the `INPUT` chain are enforced at the `NET_INET_LOCAL_IN` hook
+- each chain contains a set of firewall rules that will be enforced
+    ```
+    iptables Tables and Chains
+    +------------------------------------------------+
+    | Table   | Chain          | Functionality       |
+    |---------+----------------+---------------------|
+    | filter  | INPUT          | Packet filtering    |
+    |         | FORWARD        |                     |
+    |         | OUTPUT         |                     |
+    |---------+----------------+---------------------|
+    | nat     | PREROUTING     | Modifying source or |
+    |         | INPUT          | destination network |
+    |         | OUTPUT         | addresses           |
+    |         | POSTROUTING    |                     |
+    |---------+----------------+---------------------|
+    | mangle  | PREROUTING     | Packet content      |
+    |         | INPUT          | modification        |
+    |         | FORWARD        |                     |
+    |         | OUTPUT         |                     |
+    |         | POSTROUTING    |                     |
+    +------------------------------------------------+
+    ```
+### Using `iptables`
+- manual of `iptables`: run `man iptables`
+- we need to specify a table name (the default is `filter`), a chain name, and an operation on the chain, after that, we specify the rule, which is basically a pattern that will be matched with each of the packets passing through, if there is a match, an action will be performed on this packet. The general structure of the command is depicted in the following:
+    ```
+    iptables -t <table> -<operation> <chain> <rule> -j <target>
+             ---------- -------------------- ------ -----------
+                Table          Chain          Rule     Action
+    ```
+- the rule is the most complicated part of the `iptable` command. Some commonly used commands
+    ```
+    // List all the rules in a table
+    iptables -t nat -L -n
+    iptables -t filter -L -n --line-numbers
 
+    // Delete rule No. 2 in the INPUT chain of the filter table
+    iptables -t filter -D INPUT 2
+
+    // Drop all the incoming packets that satisfy the <rule>
+    iptables -t filter -A INPUT <rule> -j DROP
+    ```
+- *note*: Docker relies on `iptables` to manage the network it creates, so it adds many rules to the `nat` table. Be careful not to remove Docker rules
+
+### Task 2.A: Protecting the Router
+- set up rules to prevent outside machines from accessing the router machine, except ping
+- run commands on router:
+    ```
+    iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+    iptables -A OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT
+    iptables -p OUTPUT DROP
+    iptables -p INPUT DROP
+    ```
+- test on `10.9.0.5`
+    1. can you ping the router (**Yes**)
+    2. can you telnet into the router (**No**)
+        ```
+        # telnet 10.9.0.11 23
+        Trying 10.0.0.11... <--- unable to connect
+        ```
+- cleanup
+    ```
+    iptables -F
+    iptables -P OUTPUT ACCEPT
+    iptables -P INPUT ACCEPT
+    ```
+### Task 2.B: Protecting the Internal Network
+- set up firewall rules on the router to protect the internal network `192.168.60.0/24`
+- the direction of packets in the `INPUT` and `OUTPUT` chains are clear, this is not true for `FORWARD` chain, which is bi-directional. To specify the direction, we can add the interface option using `-i xyz` (coming in from interface `xyz`) and `-o xyz` (going out from `xyz`), the interfaces for the interal and external networks are different, we can find out the interface names using `ip addr` or `ifconfig`
+- objective: enforce the following restrictions on the ICMP traffic
+    1. Outside hosts cannot ping internal hosts
+    2. Outside hosts can ping the router
+    3. Internal hosts can ping outside hosts
+    4. All other packets between the interal and external networks should be blocked
+- we can use `iptables -p icmp -h` to find out all the ICMP match options
+- rules
+    ```
+    iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+    iptables -A OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT
+
+    # only allow ICMP request going out and ICMP reply coming in (eth1)
+    iptables -A FORWARD -i eth1 -p icmp --icmp-type echo-request -j ACCEPT
+    iptables -A FORWARD -o eth1 -p icmp --icmp-type echo-reply -j ACCEPT
+
+    iptables -P FORWARD DROP
+    iptables -P OUTPUT DROP
+    iptables -P INPUT DROP
+    ```
+- cleanup
+    ```
+    iptables -F
+    iptables -P OUTPUT ACCEPT
+    iptables -P INPUT ACCEPT
+    ```
+### Task 2.C: Protecting Internal Servers
+- protect the TCP servers inside the internal network `192.168.60.0/24`, specifically, we need to achieve the following objectives
+    1. All the interal hosts run a telnet server (listening to port `23`). Outside hosts can only access the telnet server on `192.168.60.5`, not the other internal hosts
+    2. Outside hosts cannot access other interal servers
+    3. Internal hosts can access all the internal servers
+    4. Internal hosts cannot access external servers
+    5. In this task, the connection tracking mechanism is not allowed
+- use `-p tcp` for TCP protocol
+- an example `iptables -A FORWARD -i eth0 -p tcp --sport 5000 -j ACCEPT`
+- rules
+    ```
+    iptables -A FORWARD -s 192.168.60.5 -i eth1 -p tcp --sport 23 -j ACCEPT
+    iptables -A FORWARD -d 192.168.60.5 -o eth1 -p tcp --dport 23 -j ACCEPT
+    iptables -P FORWARD DROP
+    ```
+- cleanup
 ## Task 3: Connection Tracking and Stateful Firewall
 
 ## Task 4: Limiting Network Traffic
