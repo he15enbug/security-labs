@@ -19,7 +19,8 @@
 - ARP Cache Poisoning Attack **[Finished]**
 - ICMP Redirect Attack **[Finished]**
 - TCP Attacks **[Finished]**
-- The Mitnick Attack
+- The Mitnick Attack **[Finished]**
+- DNS Labs
 - Firewall Exploration Lab
 - Firewall Evasion Lab
 - BGP Exploration and Attack Lab
