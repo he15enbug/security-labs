@@ -77,13 +77,53 @@
             - none of these communications will be disallowed by the firewall rule
 
 ## Task 2: Dynamic Port Forwarding
-- in the static port forwarding, each port-forwarding tunnel forwards the data to a particular destination. If we want to forward data to multiple destinations, we need to set up multiple tunnels. Dynamic port forwarding can solve this problem
+- in the static port forwarding, each port-forwarding tunnel forwards the data to a particular destination. If we want to forward data to multiple destinations, we need to set up multiple tunnels. For example, if the router blocked many websites, to visit them, we need an SSH tunnel for each of them. Dynamic port forwarding can solve this problem
 - block two more websites using the firewall rules [finished in task `0`]
 
 ### Task 2.1: Setting Up Dynamic Port Forwarding
-
+- use `ssh` to create a dynamic port-forwarding tunnel between B and A. Run the following command on host B. In dynamic port forwarding, B is often called proxy
+    - `$ ssh -4NT -D <B_IP>:<B_PORT> <UID>@<A_IP>`
+- regarding B's IP, `0.0.0.0` indicate that our port forwarding will listen to the connection from all the interfaces on B. After the tunnel is set up, use `curl` to test it. We specify a proxy option, so `curl` will send its HTTP request to the proxy B, which listen on port X. The proxy forwards the data received on this port to the other end of the tunnel (host A), from where the data will be further forwarded to the target website. The type of proxy is called SOCKS version 5 (`socks5h`)
+    - `$ curl --proxy socks5h://<B_IP>:<B_PORT> <BLOCKED_URL>`
+- *task*: create a tunnel, ensure that we can visit all the blocked websites using `curl` from hosts B, B1, and B2
+    - on host B: `$ ssh -4NT -D 0.0.0.0:9090 seed@10.8.0.99`
+    - on host B, B1, or B2: `curl --proxy socks5h://192.168.20.99:9090 85.199.108.153`
+- *questions*
+    1. which computer establishes the actual connection with the intended web server
+        - host A `10.8.0.99`
+    2. how does this computer know which server it should connect to
+        - if we look at Wireshark, before host A initiates a TCP connection with the server, there is an SSH encrypted packet from host B to A, this packet contains the server information
+        - before that, we can find a packet from B1 to B, the payload of this packet contains `85.199.108.153`, i.e., the server's IP address
 ### Task 2.2: Testing the Tunnel Using Browser
+- the host VM's IP address on the internal network `192.168.20.0/24` is `192.168.20.1`
+- to use dynamic forwarding, we need to configure Firefox's proxy setting: type `about:preferences` in the URL field, on `General` page, click `Network Settings`, then click `Settings` button, choose manual proxy configuration, and fill in B's IP and port in the `SOCKS` field, choose `SOCKS v5`
+- *task*: to test whether the traffic goes through the SSH tunnel, use `Wireshark` on the router, and point out the traffic involved in the entire port forwarding process.
+    - `192.168.20.1` will initiate a TCP connection to B, then B will send an SSH encrypted packet to host A, and host A will initiate a TCP connection with the server
+    - break the SSH tunnel, and try to browse a website: `Wireshark` will not capture any packets on network interfaces for `10.8.0.0/24` and `192.168.20.0/24`, because the VM doesn't send packets through these 2 interfaces
+
+### Task 2.3: Writing a SOCKS Client Using Python
+- for port forwarding to work, we need to specify where the data should be forwarded to (the final destination). In the static case, this piece of information is provided when setting up the tunnel. In the dynamic case, it is not specified during the setup, applications using a dynamic port forwarding proxy must tell the proxy where to forward their data. This is done through an additional protocol between the application and the proxy. A common protocol for this is the *SOCKS (SOCK Secure)* protocol, which becomes a de facto proxy standard
+- the application software must have a native SOCKS support in order to use SOCKS proxies. Both Firefox and `curl` have such a support, but we cannot directly use this type of proxy for the telnet program, because it doesn't provide a native SOCKS support
+- implement a simple SOCKS client program using Python
+    ```
+    #!/bin/env python3
+    import socks
+
+    hostname = 'www.example.com'
+    s = socks.socksocket()
+    s.set_proxy(socks.SOCKS, '192.168.20.99', 9090)
+    s.connect((hostname, 80))
+    
+    req = b'GET / HTTP/1.0\r\nHOST: ' + hostname.encode('utf-8') + b'\r\n\r\n'
+    s.sendall(req)
+    response = s.recv(2048)
+    while response:
+        print(response.split(b'\r\n'))
+        respons = s.recv(2048)
+    ```
+- create the dynamic port forwarding tunnel on B, then run this code on B, B1, and B2, we can get the content of `www.example.com`
 
 ## Task 3: Virtual Private Network (VPN)
+
 
 ## Task 4: Comparing SOCKS5 Proxy and VPN
