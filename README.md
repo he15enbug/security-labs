@@ -22,7 +22,7 @@
 - The Mitnick Attack **[Finished]**
 - DNS Labs
 - Firewall Exploration Lab **[Finished]**
-- Firewall Evasion Lab
+- Firewall Evasion Lab **[Finished]**
 - BGP Exploration and Attack Lab
 - Morris Worm
 - VPN

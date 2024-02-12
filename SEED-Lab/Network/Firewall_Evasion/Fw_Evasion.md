@@ -124,6 +124,57 @@
 - create the dynamic port forwarding tunnel on B, then run this code on B, B1, and B2, we can get the content of `www.example.com`
 
 ## Task 3: Virtual Private Network (VPN)
+- VPN is often used to bypass firewall. In this task, we will use VPN to bypass ingress and egress firewalls. OpenVPN is a powerful tool that we can use, but in this task, we simply use SSH, which is often called the poor man's VPN
+- change some default SSH settings on the server to allow VPN creation, the changes made in `/etc/ssh/sshd_config` are listed in the following (already enabled inside the containers, so no action needed)
+    ```
+    PermitRootLogin yes
+    PermitTunnel    yes
+    ```
+### Task 3.1: Bypassing Ingress Firewall
+- to create a VPN tunnel from a client to a server, we run the following `ssh` command, it creates a TUN interface `tun0` on the VPN client and server machines, and then connect these two TUN interface using an encrypted TCP connection. Both zeros in option `0:0` means `tun0`. Detailed explanation of the `-w` option can be found in the manual of SSH
+    - `# ssh -w 0:0 root@<VPN_SERVER_IP>`
+- creating TUN interfaces requires the root privilege, so we need to have the root privilege on both ends of the tunnel. That's why we run it inside the root account, and also SSH into the root account on the server. The above command only creates a tunnel, further configuration is needed on both ends of the tunnel. The following improved command include some of the configuration commands
+    ```
+    # ssh -w 0:0 root@<VPN_SERVER_IP> \
+          -o "PermitLocalCommand=yes" \
+          -o "LocalCommand= ip addr add 192.168.53.88/24 dev tun0 && \
+                            ip link set tun0 up" \
+          -o "RemoteCommand=ip addr add 192.168.53.99/24 dev tun0 && \
+                            ip link set tun0 up"
+    root@<VPN_SERVER_IP> password: <-- dees
+    ```
+- the `LocalCommand` entry specifies the command running on the client side. It configures the client-side TUN interface: assigning the `192.168.53.88/24` address to the interface and bringing it up. The `RemoteCommand` entry specifies the command running on the VPN server, it configures the server-side TUN interface. The configuration is incomplete, and further configuration is still needed
+- *task*: create a VPN tunnel between A and B, with B being the VPN server. Then conduct all the necessary configuration. Then telnet to B, B1, and B2 from the external network. Capture the packet trace, and explain why the packets are not blocked by the firewall
+- use the above `ssh` command
+- then, we need to configure the routing rule on host A, A1, and B1 (this will allow A or A1 telnet to B1)
+    - on host A: `ip route add 192.168.20.5 via 192.168.53.99 dev tun0`, on A, packets to B1 should be sent via the VPN tunnel
+    - on host A1: `ip route add 192.168.20.5 via 10.8.0.99 dev eth0`, on A1, packets to B1 to be routed by A, not the router
+    - on host B1: `ip route add 192.168.53.88 via 192.168.20.99 dev eth0`, after A sends a packet through the tunnel, and the packet reaches the other side, the source IP will become `192.168.53.88`, to ensure that the response packets from B1 can also be sent through the tunnel, these packets should first be sent to B
 
 
+### Task 3.2: Bypassing Egress Firewall
+- bypass egree firewall using VPN
+- in the lab setup, hosts on `192.168.20.0/24` cannot access the blocked 3 websites, the objective of this task is to use the VPN tunneling technique to bypass these rules
+- use B as the VPN client and A as the VPN server
+- it should be noted that when a packet generated on the VPN client is sent to the VPN server via the tunnel, the source IP address of the packet will be `192.168.53.88` according to our setup, when this packet goes out, it will go through VirtualBox's NAT server, where the source IP address will be replaced by the IP address of the host computer. The packet will eventually arrive at `www.example.com`, and the reply packet will come back to our host computer, and then be given to the same NAT server, where the destination address is translated back to `192.168.53.88`, this is where the problem comes up
+- VB's NAT server knows nothing about the `192.168.53.0/24` network, because this is the one that we create internally for our TUN interface, and VB has no idea how to route to this network, much less knowing that the packet should be given to VPN server. As a result, the reply packet from `www.example.com` will be dropped (this situation is similar to `3.1`, the host B1 will send response packets to `192.168.53.88`, but it doesn't know the `192.168.53.0/24` network, we solve that problem by adding a routing rule to make B1 send those packets to B, the VPN server who knows the `192.168.53.0/24` network)
+- *solution*: set up our own NAT server on VPN server, so when packets from `192.168.53.88` go out, their source IP  addresses are always replaced by the VPN server A's IP address (`10.8.0.99`). We can use the following command to create a NAT server on the `eth0` interface of the VPN server: `iptables -t nat -A POSTROUTING -j MASQUERADE -o eth0`
+
+- *task*: set up a VPN tunnel between B and A, with A being the VPN server. Use this VPN to successfully reach the blocked websites from host B, B1, and B2
+    ```
+    # ssh -w 0:0 root@10.8.0.99 \
+          -o "PermitLocalCommand=yes" \
+          -o "LocalCommand= ip addr add 192.168.53.99/24 dev tun0 && \
+                            ip link set tun0 up" \
+          -o "RemoteCommand=ip addr add 192.168.53.88/24 dev tun0 && \
+                            ip link set tun0 up"
+    ```
+- then, we also need to configure some routing rules
+    - suppose we are trying to visit `www.example.com` from B1
+    - on B1, send the packet to B, the VPN client: `ip route add 93.184.216.0/24 via 192.168.20.99 dev eth0`
+    - on B, send the packet to the tunnel `ip route add 93.184.216.0/24 via 192.168.53.88 dev tun0`
+    - on A, send the website's response packets through the tunnel `ip route add 192.168.20.5 via 192.168.53.99 dev tun0`
+    - to solve the NAT problem, on A: `iptables -t nat -A POSTROUTING -j MASQUERADE -o eth0`
 ## Task 4: Comparing SOCKS5 Proxy and VPN
+- SOCKS5 is more simple and straightforward to implement and use
+- Using VPN, we also need to configure the routing rules
