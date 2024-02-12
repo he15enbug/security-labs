@@ -65,9 +65,24 @@
         ```
 - *questions*
     1. How many TCP connections are involved in this entire process (use `Wireshark`)
+        - example: A2 telnet to B1 through the `ssh` tunnel
+        1. a TCP connection created between A and B (through `ssh`, at the beginning)
+        2. a TCP connection created between A1 and A (if we use A to telnet into B1, this connection will not be established)
+        3. a TCP connection created between B and B1
     2. Why can this tunnel successfully help users evade the firewall rule specified in the lab setup
+        - the lab setup disables TCP connections from external to internal hosts, except SSH connection. In the SSH tunnel, A connects to B through `ssh`, and when `telnet 10.8.0.99 9090` on external hosts, e.g., A1
+            1. A1 communicates with A (external -> external)
+            2. A communicates with B through the `ssh` tunnel (external -> internal, but through `ssh`)
+            3. B communicates with the target B1 (internal -> internal)
+            - none of these communications will be disallowed by the firewall rule
 
 ## Task 2: Dynamic Port Forwarding
+- in the static port forwarding, each port-forwarding tunnel forwards the data to a particular destination. If we want to forward data to multiple destinations, we need to set up multiple tunnels. Dynamic port forwarding can solve this problem
+- block two more websites using the firewall rules [finished in task `0`]
+
+### Task 2.1: Setting Up Dynamic Port Forwarding
+
+### Task 2.2: Testing the Tunnel Using Browser
 
 ## Task 3: Virtual Private Network (VPN)
 
