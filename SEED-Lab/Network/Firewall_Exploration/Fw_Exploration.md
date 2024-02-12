@@ -315,7 +315,107 @@
     ```
 - cleanup
 ## Task 3: Connection Tracking and Stateful Firewall
+- packets are usually not independent: they may be part of a TCP connection, or ICMP packets triggered by other packets. Treating them independently does not take into consideration the context of the packets, and can thus lead to inaccurate, unsafe, or complicated firewall rules
 
+### Task 3.A: Experiment with the Connection Tracking
+- to support statefull firewalls, we need to be able to track connections. This is achieved by the `conntrack` mechanism inside the kernel
+- check the connection tracking information on the router container: `conntrack -L`
+- *ICMP experiment*: on `10.9.0.5`, run `ping 192.168.60.5`, and check the tracking information on the router, the ICMP connection state will be kept for 30 seconds 
+    ```
+    # conntrack -L
+    icmp     1 22 src=10.9.0.5 dst=192.168.60.5 type=8 code=0 id=54 src=192.168.60.5 dst=10.9.0.5 type=0 code=0 id=54 mark=0 use=1
+    conntrack v1.4.5 (conntrack-tools): 1 flow entries have been shown.
+    ```
+- *UDP experiment*: on `192.168.60.5`, run `nc -lu 9090` (start a netcat UDP server, `-u` stands for UDP mode), on `10.9.0.5`, run `nc -u 192.168.0.5 9090`, and type something to send out UDP packet, then check the tracking information on the router, the ICMP connection state will be kept for 30 seconds
+    ```
+    # conntrack -L
+    udp      17 29 src=10.9.0.5 dst=192.168.60.5 sport=39731 dport=9090 [UNREPLIED] src=192.168.60.5 dst=10.9.0.5 sport=9090 dport=39731 mark=0 use=1
+    conntrack v1.4.5 (conntrack-tools): 1 flow entries have been shown.
+    ```
+
+- *TCP experiment*: on `192.168.60.5`, run `nc -l 9090` (start a netcat TCP server), on `10.9.0.5`, run `nc 192.168.0.5 9090`, and type something to send out UDP packet, then check the tracking information on the router, the ICMP connection state will be kept for 432000 seconds (120 hours)
+    ```
+    # conntrack -L
+    tcp      6 431994 ESTABLISHED src=10.9.0.5 dst=192.168.60.5 sport=38264 dport=9090 src=192.168.60.5 dst=10.9.0.5 sport=9090 dport=38264 [ASSURED] mark=0 use=1
+    conntrack v1.4.5 (conntrack-tools): 1 flow entries have been shown.
+    ```
+### Task 3.B: Setting Up a Stateful Firewall
+- set up firewall rules based on connections, in the following example, `-m conntrack` option indicates that we are using `conntrack` module, which is a very important module in `iptables`. It tracks connections, and `iptables` relies on the tracking information to build stateful firewalls. The `--ctstate ESTABLISHED,RELATED` indicates that whether a packet belongs to an `ESTABLISHED` or `RELATED` connection. The rule allows TCP packets belonging to an existing connection to pass through
+    ```
+    iptables -A FORWARD -p tcp -m conntrack \
+            --ctstate ESTABLISHED,RELATED -j ACCEPT
+    ```
+- the rule above does not cover the SYN packets, which do not belong to any established connection. Without it, we will not be able to create a connection in the first place. Therefore, we need to add a rule to accept incoming SYN packet
+    ```
+    iptables -A FORWARD -p tcp -i eth0 --dport 8080 --syn \
+                -m conntrack --ctstate NEW -j ACCEPT
+    ```
+- finally, we will set the default policy on `FORWARD` to drop everything: `iptables -P FORWARD DROP`
+- rewrite the firewall rules in task `2.C`, but this time, we will add a rule allowing internal hosts to visit any external server. Add the following rules to task `2.C`
+    - with `conntrack`
+        ```
+        # allow all packets via established TCP connections
+        iptables -A FORWARD -p tcp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        # allow internal servers to initiate TCP connection (for Telnet, dport 23) with external servers
+        iptables -A FORWARD -p tcp -i eth1 --dport 23 --syn -m conntrack --ctstate NEW -j ACCEPT
+        ```
+    - without `conntrack`: to allow internal hosts to visit external servers, we need to allow SYN packets and ACK packets going out, SYN+ACK packets and ACK packets coming in (these rules apply only for port 23 of the external servers), to allow each of them to close the connection, we also need to allow FIN,ACK packets from both side
+        ```
+        # Allow SYN packet and ACK packet from internal hosts to external servers (dport 23)
+        iptables -A FORWARD -p tcp -i eth1 --dport 23 --syn -j ACCEPT
+        iptables -A FORWARD -p tcp -i eth1 --dport 23 --tcp-flags SYN,ACK,RST,FIN ACK -j ACCEPT
+
+        # Allow SYN+ACK packet and ACK packet from external servers to internal hosts (sport 23)
+        iptables -A FORWARD -p tcp -o eth1 --sport 23 --tcp-flags SYN,ACK,RST,FIN SYN,ACK -j ACCEPT
+        iptables -A FORWARD -p tcp -o eth1 --sport 23 --tcp-flags SYN,ACK,RST,FIN ACK -j ACCEPT
+
+        # Allow FIN+ACK packet and RST packet from both side
+        iptables -A FORWARD -p tcp -i eth1 --dport 23 --tcp-flags SYN,ACK,RST,FIN FIN,ACK -j ACCEPT
+        iptables -A FORWARD -p tcp -i eth1 --dport 23 --tcp-flags SYN,ACK,RST,FIN RST -j ACCEPT
+        iptables -A FORWARD -p tcp -o eth1 --sport 23 --tcp-flags SYN,ACK,RST,FIN FIN,ACK -j ACCEPT
+        iptables -A FORWARD -p tcp -o eth1 --sport 23 --tcp-flags SYN,ACK,RST,FIN RST -j ACCEPT
+        ```
+- conclusion: without `conntrack`, the rules would be more complicate
 ## Task 4: Limiting Network Traffic
-
+- limit the number of packets that can pass through the firewall
+- use the `limit` module of the `iptables`, manual: `iptables -m limit -h`
+- run the following commands on router, and then ping `192.168.60.5` from `10.9.0.5`
+    ```
+    iptables -A FORWARD -s 10.9.0.5 -m limit --limit 10/minute --limit-burst 5 -j ACCEPT
+    iptables -A FORWARD -s 10.9.0.5 -j DROP
+    ```
+- `--limit 10/minute` allows a maximum of 10 packets per minute, `--limit-burst 5` specifies the maximum initial number of packets that can exceed the normal rate before the limit rules are enforced. The result is that the first 5 packets can get to `192.168.60.5` normally, then some of the packets will be dropped, to match the rate (`10/minute`), i.e., for each 6 seconds, 1 ICMP echo request packet will be accepted
 ## Task 5: Load Balancing
+- in addition to firewalls, `iptables` also has many other applications, e.g., load balancing
+- load balance 3 UDP servers running in the internal network
+- start the server on each of `192.168.60.{5, 6, 7}`, `-k` indicate that the server can receive UDP datagram from multiple hosts
+    - `nc -luk 8080`
+- use `statistic` module to achieve load balancing, manual: `iptables -m statistic -h`. There are 2 modes: `random` and `nth`
+- *Using the `nth` mode (round-robin)*: on the router, set the following rules, which applies to all UDP packets going to port `8080`, `nth` mode implements a round-robin load balancing policy: for every 3 packets, pick the packet 0, change its destination IP and port to `192.168.60.5` and `8080`, respectively
+    ```
+    iptables -t nat -A PREROUTING -p udp --dport 8080 \
+             -m statistic --mode nth --every 3 --packet 0 \
+             -j DNAT --to-destination 192.168.60.5:8080
+    iptables -t nat -A PREROUTING -p udp --dport 8080 \
+             -m statistic --mode nth --every 3 --packet 1 \
+             -j DNAT --to-destination 192.168.60.6:8080
+    iptables -t nat -A PREROUTING -p udp --dport 8080 \
+             -m statistic --mode nth --every 3 --packet 2 \
+             -j DNAT --to-destination 192.168.60.7:8080
+    ```
+    - on `10.9.0.5`: run `echo hello | nc -u 10.9.0.11 8080`, these UDP packets will be routed to 3 internal servers. The result is that the third server get less packets than the first and the second, in Wireshark, sometimes, the router will send an ICMP packet to `10.9.0.5` indicating that the port is unreachable, this may be caused by UDP packet loss
+
+- *Using the `random` mode*: `--probability P` select a matching packet with the probability `P`
+    ```
+    iptables -t nat -A PREROUTING -p udp --dport 8080 \
+             -m statistic --mode random --probability 0.2 \
+             -j DNAT --to-destination 192.168.60.5:8080
+    iptables -t nat -A PREROUTING -p udp --dport 8080 \
+             -m statistic --mode random --probability 0.3 \
+             -j DNAT --to-destination 192.168.60.6:8080
+    iptables -t nat -A PREROUTING -p udp --dport 8080 \
+             -m statistic --mode random --probability 0.5 \
+             -j DNAT --to-destination 192.168.60.7:8080
+    ```
+    - the result: if we send enough packets, `192.168.60.7` will get most of them
+    - to make each of the servers gets roughly the same amount of traffic, we can set the probability to `0.33`, `0.33`, `0.34`

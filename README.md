@@ -21,7 +21,7 @@
 - TCP Attacks **[Finished]**
 - The Mitnick Attack **[Finished]**
 - DNS Labs
-- Firewall Exploration Lab
+- Firewall Exploration Lab **[Finished]**
 - Firewall Evasion Lab
 - BGP Exploration and Attack Lab
 - Morris Worm
