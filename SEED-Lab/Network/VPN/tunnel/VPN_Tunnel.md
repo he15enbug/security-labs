@@ -287,7 +287,7 @@
         2. [`poll`](https://en.wikipedia.org/wiki/Poll_(Unix))
         3. [`epoll`](https://en.wikipedia.org/wiki/Epoll)
 - In this lab, we are going to use `select`
-- code:
+- code on the server `tun_server2.py` (it is similar on the client):
     ```
     while True:
         # parameters: 1. readable, 2. writable, 3. exceptional, (4. timeout)
@@ -297,8 +297,8 @@
             if fd is sock:
                 data, (ip, port) = sock.recvfrom(2048)
                 pkt = IP(data)
-                print("From socket <==: {} --> {}".format(pkt.src, pkt.dst))
-                
+                print("From socket <==: {}:{} --> {}:{}".format(ip, port, SERVER_IP, SERVER_PORT))
+                print("    Inside: {} --> {}".format(pkt.src, pkt.dst))
                 os.write(tun, bytes(pkt))
 
             if(fd is tun):
@@ -341,3 +341,117 @@
     ```
 
 ## Task 6: Tunnel-Breaking
+- on host U, `telnet` to Host V, while keeping the `telnet` connection alive, we break the VPN tunnel by stopping the client or server program, then type something in `telnet` window:
+    1. do we see what we type? (**No**)
+    2. is the TCP connection broken?
+        - **No**, the TCP connection is still alive, because to close a TCP connection, one of the side needs to send a FIN+ACK packet or RST packet to close the connection. When we stop the VPN server program, none of the two sides knows about that
+- reconnect: after reconnecting in a short time, we will find what we typed earlier has been displayed on the `telnet` window, in the case of stopping the server program, when host U sends the packet to the server, it will found that the destination is unreachable, and will keep trying. When we restart the server program, the packet will finally get to the destination and get response, so what we typed before is displayed
+
+## Task 7: Routing Experiment on Host V
+- in an real VPN system, the traffic will be encrypted, that means the return traffic must come back from the same tunnel. How to get the return traffic from host V to the VPN server is non-trivial. Our setup simplifies the situation. In our setup, host V's routing table has a default setting: packets to any destination except the `192.168.60.0/24` network, will be routed to the VPN server
+- in the real world, host V may be a few hops away from the VPN server, and the default routing entry may not guarantee to route the return packet back to the VPN server. Routing tables inside a private network have to be set up properly to ensure that packets going to the other end of the tunnel will be routed to the VPN server
+- to simulate this scenario, we will remove the default entry from host V, and add a more specific entry to the routing table, so the return packets can be routed back to the VPN server
+- *solution*
+    ```
+    (configure the routing table of host V 192.168.60.5)
+    # ip route del default
+    (if we ping 192.168.60.5 on host U at this moment, we won't succeed)
+    # ip route add 192.168.53.0/24 via 192.168.60.11 dev eth0
+    (now, we can get response on host U)
+    ```
+
+## Task 8: VPN Between Private Networks
+- in this task, we are setting up a VPN between two private networks, the whole setup is described in `docker-compose2.yml`, use `-f docker-compose2.yml` to ask `docker-compose` to use this file
+    ```
+    $ docker-compose -f docker-compose2.yml build
+    $ docker-compose -f docker-compose2.yml up
+    $ docker-compose -f docker-compose2.yml down
+    ```
+- *network setup*
+    - network `10.9.0.0/24`
+        - VPN client `10.9.0.12`
+        - VPN server `10.9.0.11`
+    - network `192.168.50.0/24`
+        - VPN client `192.168.50.12`
+        - host U `192.168.50.5`
+    - network `192.168.60.0/24`
+        - VPN server `192.168.60.11`
+        - host V `192.168.60.5`
+- this setup simulates a situation where an organization has two sites, each having a private network. The only way to connect these two networks is through the Internet. Our task is to setup a VPN between these two sites, so the communication between these two networks will go through a VPN tunnel
+- we can use code developed earlier, but we need to correctly set up the routing:
+    ```
+    (client)
+    # ip route add 192.168.60.0/24 via 192.168.53.88 dev tun_client0
+    
+    (host U)
+    # ip route add 192.168.60.0/24 via 192.168.50.12 dev eth0
+    # ip route add 192.168.53.0/24 via 192.168.50.12 dev eth0
+
+    (server)
+    # ip route add 192.168.50.0/24 via 192.168.53.99 dev tun_server0
+    
+    (host V)
+    # ip route add 192.168.53.0/24 via 192.168.60.11 dev eth0
+    # ip route add 192.168.50.0/24 via 192.168.60.11 dev eth0
+    ```
+- after configuring the routing table, we can ping each other on host U and V, both will be able to get the reply packets
+
+## Task 9: Experiment with the TAP Interface
+- a simple experiment with the TAP interface
+- the way how TAP works is similar to TUN, the main difference is that the kernel end of the TUN interface is hooked to the IP layer, while the kernel end of the TAP interface is hooked to the MAC layer, therefore, packet going through the TUN interface includes the MAC header. Other than getting the frames containing IP packets, using the TAP interface, applications can also get other types of frames, such as ARP frames
+- example program
+    ```
+    ...
+    tap = os.open('/dev/net/tun, os.O_RDWR')
+    ifr = struct.pack('16sH', b'tap%d', IFF_TAP | IFF_NO_PI) # use IFF_TAP
+    ifname_bytes = fcntl.ioctl(tap, TUNSETIFF, ifr)
+    ifname = ifname_bytes.decode('UTF-8')[:16].strip('\x00')
+    ...
+    while True:
+        packet = os.read(tap, 2048)
+        if packet:
+            ether = Ether(packet)
+            print(ether.summary())
+    ```
+- run this on VPN client, and ping any host on `192.168.53.0/24`, the program will not see those ICMP packets (because they are IP packets), instead, it will see the ARP packets send by the client to ask for the MAC address of `192.168.53.100`, and the ICMP echo request packets
+    ```
+    # ./tap.py 
+    Interface Name: tap0
+    Ether / ARP who has 192.168.53.100 says 192.168.53.99
+    Ether / ARP who has 192.168.53.100 says 192.168.53.99
+    Ether / IP / ICMP 192.168.53.99 > 192.168.53.100 echo-request 0 / Raw
+    ```
+- spoof fake reply
+    ```
+    FAKE_MAC = 'aa:bb:cc:dd:ee:ff'
+    if ARP in ether and ether[ARP].op == 1:
+        arp      = ether[ARP]
+        newether = Ether(dst=ether.src, src=FAKE_MAC)
+        # request: op=1, reply: op=2
+        newarp   = ARP(psrc=arp.pdst, hwsrc=FAKE_MAC, pdst=arp.psrc, hwdst=ether.src, op=2)
+        newpkt   = newether/newarp
+
+        print('***** Fake response: {} *****'.format(newpkt.summary()))
+        os.write(tap, bytes(newpkt))
+    ```
+- use `arping -I tap0 192.168.53.100` to test it, we can get fake responses
+    ```
+    # arping -I tap0 192.168.53.100
+    ARPING 192.168.53.100
+    42 bytes from aa:bb:cc:dd:ee:ff (192.168.53.100): index=0 time=1.229 msec
+    42 bytes from aa:bb:cc:dd:ee:ff (192.168.53.100): index=1 time=1.161 msec
+    42 bytes from aa:bb:cc:dd:ee:ff (192.168.53.100): index=2 time=1.825 msec
+    ```
+    ```
+    # ./tap.py 
+    Interface Name: tap0
+    ----------------------
+    Ether / ARP who has 192.168.53.100 says 192.168.53.99 / Padding
+    ***** Fake response: Ether / ARP is at aa:bb:cc:dd:ee:ff says 192.168.53.100 *****
+    ----------------------
+    Ether / ARP who has 192.168.53.100 says 192.168.53.99 / Padding
+    ***** Fake response: Ether / ARP is at aa:bb:cc:dd:ee:ff says 192.168.53.100 *****
+    ----------------------
+    Ether / ARP who has 192.168.53.100 says 192.168.53.99 / Padding
+    ***** Fake response: Ether / ARP is at aa:bb:cc:dd:ee:ff says 192.168.53.100 *****
+    ```

@@ -23,13 +23,13 @@
 - DNS Labs
 - Firewall Exploration Lab **[Finished]**
 - Firewall Evasion Lab **[Finished]**
-- BGP Exploration and Attack Lab
-- Morris Worm
 - VPN
-    - Tunneling Lab **[Finished/Total = 5/9]**
+    - Tunneling Lab **[Finished]**
         - focusing on tunneling part, the tunnel is not encrypted
     - Encryption Lab
         - including the encryption part
+- BGP Exploration and Attack Lab
+- Morris Worm
 - Heartbleed Attack
 
 ### Software Security
