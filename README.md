@@ -53,5 +53,8 @@
 - Smart Contract Reentrancy Attack Lab **[Finished]**
 
 ### Cryptography
+- Transport Layer Security Lab
+- Public-Key Infrastructure Lab
+
 
 ## [ASU CSE365 Introduction to Information Assurance](https://adamdoupe.com/teaching/classes/cse365-intro-information-assurance-s20/)

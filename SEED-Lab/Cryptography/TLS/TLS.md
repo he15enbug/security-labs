@@ -1,0 +1,11 @@
+# Transport Layer Security Lab
+- data are transmitted over a public network unprotected, they can be read or even modified by others
+- To achieve interoperability, i.e., allowing different applications to communicate with one another, these applications need to follow a common standard, *Transport Layer Security, TLS*. Most web servers are using HTTPS, which is built on top of TLS
+- topics
+    - Public-Key Infrastructure (PKI)
+    - Transport Layer Security (TLS)
+    - TLS programming
+    - HTTPS proxy
+    - X.509 certificates with the Subject Alternative Name (SAN) extensions
+    - Man-In-The-Middle attacks
+- prerequisite: this lab depends on the PKI lab
