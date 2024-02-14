@@ -21,6 +21,13 @@
     ```
 
 ## Task 1: Stub Autonomous System
+- an *autonomous system (AS)* is a collection of connected Internet Protocol (IP) routing prefixes under the control of one or more operators on behalf of a single administrative entity or domain. It is a basic unit in BGP. A stub AS is the type of AS that does not provide transit service to others. Most of end users are stub ASes, including universities, organizations, and most companies. Another type of AS is called transit AS. They provide transit services for other ASes, and they are Internet Service Providers (ISP)
+- in this task, we focus on stub ASes, see how it peers with others
+
+### Task 1.a: Understanding AS-155's BGP Configuration
+- AS-155 is a stub AS, which has one network `10.155.0.0/24` and one BGP router `10.155.0.254`
+- get a terminal on the container of this router, study its BGP configuration in `/etc/bird/bird.conf`
+- *task 1.a.1*: from the BGP configuration file, identify who AS-155 peers with. We can ignore the filtering part of the configuration for now
 
 ## Task 2: Transit Autonomous System
 
