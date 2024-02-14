@@ -6,6 +6,8 @@
 ## [SEED Lab](https://seedsecuritylabs.org)
 
 ### System Security
+- Meltdown (Ubuntu 16.04) **[New CPU Has Been Patched]**
+- Spectre
 
 ### Web Security **[Finished]**
 - Cross-site Scripting (XSS) Lab **[Finished]**
@@ -30,7 +32,7 @@
         - including the encryption part
 - BGP Exploration and Attack Lab
 - Morris Worm
-- Heartbleed Attack
+- Heartbleed Attack (Ubuntu 12.04)
 
 ### Software Security
 - Environment Variable and Set-UID Lab **[Finished]**

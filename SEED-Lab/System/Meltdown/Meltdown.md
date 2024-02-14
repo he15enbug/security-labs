@@ -148,3 +148,28 @@
     ```
 
 ## Task 7: The Basic Meltdown Attack
+- how far a CPU can go in the out-of-order execution depends on how slow the access check, which is done in parallel, is performed. This is a typical race condition situation. In this task, we will exploit this race condition to steal a secret from the kernel
+
+### Task 7.1: A Native Approach
+- in previous task, although we can observe that `array[7*4096 + DELTA]` is in the CPU cache, we do not get any useful information about the secret. If instead of using `array[7*4096 + DELTA]`, we access `array[kernel_data*4096 + DELTA]`, which brings it into the CPU cache. Using the FLUSH+RELOAD technique, we check the access time of `array[i*4096 + DELTA]` for `i=0, ..., 255`, if we find out that only `array[k*4096 + DELTA]` is in the cache, we can infer that the value of the secret is `k`
+- modify `MeltdownExperiment.c` to implement this method
+- it seems that my Intel CPU has already fixed Meltdown vulnerability, according to my observation， we cannot get the secret value (`'S', 83`): 
+    ```
+    char kernel_data = 20;
+    kernel_data = *(char*) 0xfbce3000;
+    array[kernel_data*4096 + DELTA] += 1;
+    ```
+    - no matter what the initial value of `kernel_data` is, we always get `array[0*4096 + 1024] is in cache`
+### Task 7.2: Imporve the Attack by Getting the Secret Data Cached
+- to success, we need the out-of-order execution faster than the access check
+- in practce, if a kernel data item is not cached, using Meltdown to steal the data will be difficult
+- get the kernel data cached before launching the attack
+
+### Task 7.3: Using Assembly Code to Trigger Meltdown
+- we probably still cannot succeed, even with secret data being cached by CPU
+- improve more by adding a few lines of assembly instructions before the kernel memory access
+- in `meltdown_asm()`: do a loop for 400 times, inside the loop, it simply add a number `0x141` to the `eax` register. This code basically does useless computations, these extra lines of code give the algorithmic units something to chew while memory access is being speculated
+- after all the improvement, we still get `array[0*4096 + 1024] is in cache`, that means the Meltdown vulnerability may have been patched in my CPU
+
+## Task 8: Make the Attack More Practical
+- **TO-DO**: I will redo task 7 and 8 when I find a computer with an old Intel CPU that has not been patched
