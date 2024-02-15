@@ -171,5 +171,26 @@
 - in `meltdown_asm()`: do a loop for 400 times, inside the loop, it simply add a number `0x141` to the `eax` register. This code basically does useless computations, these extra lines of code give the algorithmic units something to chew while memory access is being speculated
 - after all the improvement, we still get `array[0*4096 + 1024] is in cache`, that means the Meltdown vulnerability may have been patched in my CPU
 
-## Task 8: Make the Attack More Practical
-- **TO-DO**: I will redo task 7 and 8 when I find a computer with an old Intel CPU that has not been patched
+
+## REDO Task 7 with an older CPU (Intel i5 7th Gen)
+### Task 7.1
+- the result is none of the array elements is in the CPU cache, this is becuase the out-of-order execution haven't put the target element into the CPU cache before the access check finishes
+### Task 7.2
+- before launching the attack, use the secret number to make it in the CPU cache, with this step, it would be faster when we load the value of the secret to `kernel_data`. However, this still not work
+### Task 7.3
+- add some assembly code to make the access check slower. Then write a shell script to run `MeltdownExperiment` 1000 times, by observing the output, we can found that in most of the time, it can get the correct secret value `83`
+
+## Task 8: Make the Attack More Practical (Intel i5 7th Gen CPU)
+- **FINISHED**: redo task 7 and 8 when I find a computer with an old Intel CPU that has not been patched
+- because not every time we can get the correct secret value, sometimes only `array[0*4096 + 1024]` is in the cache, but statistically, `array[kernel_data*4096 + 1024]` should appear more times than other values, so we can run the attack process for 1000 times, and for `i` in `{0,1,2,...,255}`, we record a `score[i]`, each time if `array[i*4096 + 1024]` is in the cache, we add 1 to `score[i]`. Finally, the secret value should have the maximum socre
+- result
+    ```
+    The secret value is 83 S
+    The number of hits is 916
+    ```
+- *adjusting the number of loops*: when there are 400 loops, in most cases, the number of hits for `83` is more than 900 out of 1000, by adjusting the number of loops (based on my Intel i5 7th Gen CPU), I found that when it is smaller than 40, the hit rate of `83` will decrease, and when it is smaller than `30`, `0` has the maximum hit rate, around `1%` to `10%`, and in most cases, none of the 256 elements is in the cache. This is because when the number of loops is very small, the access check will be finished before we load `array[kernel_data*4096 + 1024]` into cache. I also tried larger number of loops, when it is larger than `700000`, the success rate starts to decrease, and finally, when the number is larger than `1000000`, the result is similar to the result when the number is smaller than `30`
+
+## A Final Discussion: Where is the `0` in `array[0*4096 + 1024] is in cache` comes from
+- I did task 7 with 2 CPUs, Intel i7 11th Gen and Intel i5 7th Gen
+- initially, I used the newer CPU, and in all three subtasks, I got `array[0*4096 + 1024] is in cache` most of the time, and sometimes nothing is in the cache. I though there is some sort of countermeasure in newer CPUs that makes `kernel_data` to `0` temporarily, but after experimenting with an older CPU (which I bought in the summer of 2017, earlier than the time the lab was published, so it should work), I also got `array[0*4096 + 1024] is in cache` sometimes (although in `7.3`, most of the times, I can get the correct secret number `83`)
+- Let's make the question more clear: since I set the initial value of `kernel_data` to `42`, if the secret data is assigned to `kernel_data`, `array[83*4096 + 1024]` should be in the cache, otherwise, `array[42*4096 + 1024]` or none of the 256 elements should be in the cache. How can we get the reuslt that `array[0*4096 + 1024]` is in cache?
