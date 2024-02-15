@@ -7,7 +7,7 @@
 
 ### System Security
 - Meltdown (Ubuntu 16.04, Intel i5 7th Gen CPU) **[Finished]**
-- Spectre
+- Spectre (Ubuntu 16.04, Intel i7 11th Gen CPU) **[Finished]**
 
 ### Web Security **[Finished]**
 - Cross-site Scripting (XSS) Lab **[Finished]**
