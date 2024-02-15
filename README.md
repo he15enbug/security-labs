@@ -6,7 +6,7 @@
 ## [SEED Lab](https://seedsecuritylabs.org)
 
 ### System Security
-- Meltdown (Ubuntu 16.04) **[New CPU Has Been Patched]**
+- Meltdown (Ubuntu 16.04, Intel i5 7th Gen CPU) **[Finished]**
 - Spectre
 
 ### Web Security **[Finished]**
