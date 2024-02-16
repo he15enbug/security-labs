@@ -46,6 +46,8 @@
 - Dirty COW Attack Lab (Ubuntu 12.04) **[Finished]**
 
 ### Mobile Security
+- Android Repackaging Attack Lab (Ubuntu 16.04) **[Finished]**
+- Android Rooting Attack Lab (Ubuntu 16.04)
 
 ### Blockchain **[Finished]**
 - Blockchain Exploration Lab **[Finished]**
@@ -53,8 +55,8 @@
 - Smart Contract Reentrancy Attack Lab **[Finished]**
 
 ### Cryptography
-- Transport Layer Security Lab
 - Public-Key Infrastructure Lab
+- Transport Layer Security Lab
 
 
 ## [ASU CSE365 Introduction to Information Assurance](https://adamdoupe.com/teaching/classes/cse365-intro-information-assurance-s20/)
