@@ -90,5 +90,68 @@
     - *important*: the shell program on Android is `/system/bin/sh`, if we use `#!/bin/bash` in `dummy.sh`, `init.sh` will not be able to run it
 
 ## Task 2: Inject Code via `app_process`
+- in task `1`, we modify the `init.sh` file to get our injected program to run automatically with the root privilege. This initialization script is used by the underlying Linux OS. Once the Linux part is initialized, Android OS will bootstrap its runtime that is built on top of Linux. We would like to execute our injected program during this bootstrapping process
+- when Android runtime bootstraps, it always runs a program called `app_process`, using the root privilege. This starts the `Zygote` daemon, whose mission is to launch applications, i.e., `Zygote` daemon is the parent of all app processes
+- modify `app_process`, so in addition to launch the `Zygote` daemon, it also runs something of our choice to create a file `/system/dummy2`
+- the following sample code is a wrapper for the original `app_process`, we will rename the original `app_process` binary to `app_process_original`, and call our wrapper program `app_process`, so it will first create `/system/dummy2`, and then run the original `app_process`
+    ```
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <unistd.h>
+
+    extern char** environ;
+
+    int main(int argc, char** argv) {
+        // Write the dummy file
+        FILE* f = fopen("/system/dummy2", "w");
+        if(f == NULL) {
+            printf("Permission Denied\n");
+            exit(EXIT_FAILURE);
+        }
+        fclose(f);
+
+        // Launch the original binary
+        char* cmd = "/system/bin/app_process_original";
+        execve(cmd, argv, environ);
+
+        // execve() returns only if it fails
+        return EXIT_FAILURE;
+    }
+    ```
+- *step 1: compile the code*
+    - compile the code on SEED Ubuntu VM, because neither of the recovery OS or Android OS has the native code development environment installed. The *Native Development Kit (NDK)* has been installed on SEED Ubuntu VM. NDK is a set of tools that allow us to compile C and C++ code for Android OS, this type of code, called native code, can either be a stand-alone native program, or invoked by Java code in Android apps via *JNI (Java Native Interface)*. Our wrapper `app_process` program is a stand-alone native program, which needs to be compiled using NDK
+    - to use NDK, we need to create 2 files, `Application.mk` and `Android.mk`, and place them in the same folder as the source code
+        - The Application.mk file
+            ```
+            APP_ABI := x86
+            APP_PLATFORM := android-22
+            APP_STL := stlport_static
+            APP_BUILD_SCRIPT := Android.mk
+            ```
+        - The Android.mk file
+            ```
+            LOCAL_PATH := $(call my-dir)
+            include $(CLEAR_VARS)
+            LOCAL_MODULE := my_app_process
+            LOCAL_SRC_FILES := my_app_process.c
+            include $(BUILD_EXECUTABLE)
+            ```
+    - run the following command to compile the code, if the compilation succeeds, we can find the binary file in the `./libs/x86` folder
+        ```
+        export NDK_PROJECT_PATH=.
+        ndk-build NDK_APPLICATION_MK=./Application.mk
+        ```
+    - result
+        ```
+        $ ./compile.sh 
+        Compile x86    : my_app_process <= my_app_process.c
+        Executable     : my_app_process
+        Install        : my_app_process => libs/x86/my_app_process
+        ```
+
+- *step 2: write the update script and build OTA package*
+    - just like in task `1`, create the OST package, then unzip it in the recovery OS, and run `update-binary`
+        1. copy the compiled binary code to the corresponding location (`/system/bin/`) inside Android
+        2. rename the original `app_process` to `app_process_original`, and rename our binary as `app_process` (specifically, `app_process64`, as our Anroid VM is 64-bit)
 
 ## Task 3: Implement `SimpleSU` for Getting Root Shell
