@@ -45,9 +45,9 @@
 - Format-String Lab **[Finished]**
 - Dirty COW Attack Lab (Ubuntu 12.04) **[Finished]**
 
-### Mobile Security
-- Android Repackaging Attack Lab (Ubuntu 16.04) **[Finished]**
-- Android Rooting Attack Lab (Ubuntu 16.04)
+### Mobile Security **[Finished]**
+- Android Repackaging Attack Lab (Ubuntu 16.04, Android 7.1) **[Finished]**
+- Android Rooting Attack Lab (Ubuntu 16.04, Android 7.1) **[Finished]**
 
 ### Blockchain **[Finished]**
 - Blockchain Exploration Lab **[Finished]**

@@ -155,3 +155,100 @@
         2. rename the original `app_process` to `app_process_original`, and rename our binary as `app_process` (specifically, `app_process64`, as our Anroid VM is 64-bit)
 
 ## Task 3: Implement `SimpleSU` for Getting Root Shell
+- now we know how to inject our code into the Android system and gain the root privilege, but we have not completely achieved our ultimate goal. We want to get a shell that runs with the root privilege, such a shell is called *root shell*
+- the problem of the approaches in task `1` and `2` is that if we start a interactive shell (which will not terminate unless user type an exit command), this will stop the system booting process, so the OS will never be able to complete its booting sequence
+- if we were on a typical Linux system, we can easily solve the problem by using the `chmod` command to turn on the Set-UID bit of any shell program (e.g., `/bin/bash`) that is owned by the root. Unfortunately, for security reasons, Android has removed the Set-UID mechanism from its underlying Linux OS since version 4.3 (API Level 18)
+- antoher approach is to start a root daemon during the booting process, and then use this daemon to help users get a root shell. This is the approach used by some of the popular rooting OTA packages, such as `SuperSU` developed by Chainfire. We will write such a daemon
+- the idea is simple, when users want to get a root shell, they run a client program, which sends a request to the root daemon, then the daemon starts a shell process, and give it to the client. The tricky part is how to let the user control the shell process that is created by the daemon
+- users need to be able to control the standard input and output devices of the shell process, however, the shell process inherits its standard I/O devices from its parent process owned by root. We can find a way to let the client program to control these devices, or we can do it in a different way by giving the client program's IP devices to the shell process, so they also become the I/O devices of the shell program
+- we need to have 2 essential pieces of knowledge
+    1. how to send the standard I/O devices (file descriptors) to another process
+    2. once a process receives the file descriptors, how it can use them as its IO devices
+
+### Background
+- *file descriptors*
+    - each process in Linux systems typically has 3 associated I/O devices: standard input (`STDIN`), standard output (`STDOUT`), and standard error devices (`STDERR`)
+    - processes access these devices through the standard POSIX application programming interface that uses file descriptors: `0`: `STDIN`; `1`: `STDOUT`; `2`: `STDERR`, in this task, we need to pass file descriptors from one process to another
+    - file descriptors can be passed either via inheritance or explicit sending, when a parent process creates a child process using `fork()`, all the partent's file descriptors are inherited by the child process. Beyond this stage, if parent process wants to share a new file descriptor with its children, or if two unrelated processes want to share the same file descriptor, they have to explicitly send the fd, which can be achieved using the Unix Domain Socket
+    - fd can be redirected. The system call `dup2(int dest, int src)` can redirect the `src` fd to the `dest` one, so the fd entry at index `src` actually points to the entry at `dest`
+- *creating new process*
+    - `pid_t pid=fork()`, in parent process `pid!=0` (it will be parent process ID), in child process `pid==0`
+
+- *passing the file descriptor*
+    - each of the client and server has its own standard I/O FDs `0`, `1`, `2`, denote them as `C_IN`, `C_OUT`, `C_ERR`, `S_IN`, `S_OUT`, `S_ERR`
+    - how the client and the server work together to help the client get the root privilege
+        1. the client connects to the server using the Unix Domain Socket
+        2. Upon receiving the request, the server forks a child process and runs a root shell. The child process inherits all the standard I/O FDs from the parent
+        3. the client sends its FDs 0, 1, and 2 to the server's child process using the Unix Domain Socket, they will be saved in the table indexes 4, 5, and 6, respectively
+        4. the child process redirects its FDs 0, 1, 2 to the FDs received from the client, resulting in FDs 4, 5, and 6 being used as the standard input, output, and error devices. Now, the client and the server's child process share the same I/O devices
+### The Task
+- the source code is provided, compile them using NDK, and build an OTA package
+    - use the approach in task `1`, place `/system/xbin/mydaemon` before `return 0` in `/system/etc/init.sh`
+    - after getting into the Android OS, run `/system/xbin/mysu`
+        ```
+        $ /system/xbin/mysu
+        ...
+        start to connect to daemon
+        sending file descriptor
+        STDIN 0
+        STDOUT 1
+        STDERR 2
+        2
+        ...
+        # id
+        uid=0(root) gid=0(root) groups=0(root) context=u:r:init:s0
+        ```
+- check the standard I/O devices of the client and the shell process (the file descriptors are in `/proc/<PID>/fd/`)
+    ```
+    # ps | grep my
+    root    1071  1     5064  364   0 0000000000 S /system/xbin/mydaemon
+    root    1084  1071  0     0     0 0000000000 Z myademon
+    root    1508  1071  0     0     0 0000000000 Z myademon
+    root    1855  1071  0     0     0 0000000000 Z myademon
+    u0_a36  3143  3096  5064  1888  0 0000000000 S ./mysu
+    ```
+    ```
+    # ps | grep sh
+    ...
+    root    3812  1071  0     0     0 0000000000 S /system/bin/sh
+    ...
+    ```
+    - we can see a root shells generated by `mydaemon` process (`PID 1071`). Check `ls -la /proc/3812/fd`, and the user program's FDs `ls -la /proc/3143/fd`, we can find that both of teir standard IO devices FDs (0, 1, and 2) are pointed to `/dev/pts/0`
+- actions
+    - server launches the original `app_process` binary: in `main()` function
+        ```
+        argv[0] = APP_PROCESS;
+        execve(argv[0], argv, environ);
+        ```
+    - client sends its FDs: in `connect_daemon()` function
+        ```
+        send_fd(socket, STDIN_FILENO);      //STDIN_FILENO = 0
+        send_fd(socket, STDOUT_FILENO);     //STDOUT_FILENO = 1
+        send_fd(socket, STDERR_FILENO);     //STDERR_FILENO = 2
+        ```
+    - server forks to a child process: in `main()` function
+        ```
+        pid_t pid = fork();
+        if (pid == 0) {
+            //initialize the daemon if not running
+            if (!detect_daemon()) run_daemon(argv);
+        }
+        ```
+    - child process receives client's FDs: in `child_process()` function
+        ```
+        int client_in = recv_fd(socket);
+        int client_out = recv_fd(socket);
+        int client_err = recv_fd(socket);
+        ```
+    - child process redirects its standard I/O FDs: in `child_process()` function
+        ```
+        dup2(client_in, STDIN_FILENO);      //STDIN_FILENO = 0
+        dup2(client_out, STDOUT_FILENO);    //STDOUT_FILENO = 1
+        dup2(client_err, STDERR_FILENO);    //STDERR_FILENO = 2
+        ```
+    - child process launches a root shell: in `child_process()` function
+        ```
+        char* env[] = {SHELL_ENV, PATH_ENV, NULL};
+        char* shell[] = {DEFAULT_SHELL, NULL};
+        execve(shell[0], shell, env);
+        ```

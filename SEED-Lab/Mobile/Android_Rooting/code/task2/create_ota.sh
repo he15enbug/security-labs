@@ -3,7 +3,7 @@
 mkdir -p my_ota/META-INF/com/google/android
 touch my_ota/META-INF/com/google/android/updater-script
 
-# create update-binary and write code modify init.sh
+# create update-binary
 touch my_ota/META-INF/com/google/android/update-binary
 cp libs/x86/my_app_process my_ota/META-INF/com/google/android/my_app_process
 
