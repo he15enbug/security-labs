@@ -84,9 +84,71 @@
     X509v3 Subject Alternative Name:
         DNS:www.bank32.com, DNS:www.bank32A.com, DNS:www.bank32B.com
     ```
-
 ## Task 4: Deploying Certificate in an Apache-Based
+- an Apache server can simultaneously host multiple websites. It need to know the directory where a website's files are stored. This is done via its `VritualHost` file, located in `/etc/apache2/sites-available` directory. In our container, we have a file called `bank32_apache_ssl.conf`
+    ```
+    <VirtualHost *:443>
+        DocumentRoot /var/www/bank32
+        ServerName www.bank32.com
+        ServerAlias www.bank32A.com
+        ServerAlias www.bank32B.com
+        DirectoryIndex index.html
+        SSLEngine On
+        SSLCertificateFile      /certs/bank32.crt
+        SSLCertificateKeyFile   /certs/bank32.key
+    </VirtualHost>
+    ```
+- to make the website work, we need to enable Apache's `ssl` module and then enable the site (already enabled when the container was built)
+    - `# a2enmod ssl`
+    - `# a2ensite bank32_apache_ssl`
+- *starting the Apache server*
+    - the Apache server is not automatically started in the container, because of the need to type the password to unlock the private key. Run `service apache2 start` in the container
+    - when Apache starts, it needs to load the private key for each HTTPS site. Our private key is encrypted, so Apache will ask us to type the password
+        ```
+        # service apache2 start
+        * Starting Apache httpd web server apache2
+        Enter passphrase for SSL/TLS keys for www.bank32.com:443 (RSA):
+        * 
+        ```
+- *browsing the website*
+    - we will not be able to load `https://www.bank32.com` (Error code: `SEC_ERROR_UNKNOWN_ISSUER`), because we are using our own root CA, now what we need to do is to add our root CA to the browser, and we also need to replace the `bank.crt` and `bank.key` with the files generated in previous tasks
+    1. copy the generated certificate and private key to `/certs/` in the container, rename them to `bank32.crt` and `bank32.key`, respectively
+    2. in Firefox, add our CA: type `aboutLpreference#privacy` in the address bar to go to the privacy settings, click `View Certificates`, in `Authorities` tab, we can see a list of certificates accepted by Firefox, we need to import `ca.crt`, and select `Trusted this CA to identify web sites`
+    - *important*: after replacing the certificate and key file, we need to restart apache2 `service apache2 restart`, otherwise, we still cannot visit `https://www.bank32.com`
 
 ## Task 5: Launching a Man-In-The-Middle Attack
+- *Man-In-The-Middle Attack*: assume Alice wants to visit `example.com` via the HTTPS protocol, she needs to get the public key from `example.com` server. Alice will generate a secret, and encrypt the secret using the server's public key, and sent it to the server. If an aatacker can intercept the communication between Alice and the server, the attacker can replace the server's public key with its own public key. Alice's secret will be encrypted with the attacker's public key, so the attacker will be able to read the secret. And the attacker can re-encrypt it using the server's public key. Overall, the attacker can impersonate Alice to the server, and impersonate the server to Alice
+
+- *step 1: setting up the malicious website*
+    - use the same Apache server to impersonate `www.example.com`, to achieve that, we will follow the instruction in task `4` to add a `VirtualHost` entry to Apache's SSL configuration file: `ServerName` should be `www.example.com`, the rest of the configuration can be the same as that used in Task `4`. In the real world, we won't be able to get a valid certificate for `www.example.com`, so we will use the same certificate that we used for our own server
+    - goal: when a user tries to visit `www.example.com`, we are going to get the user to land in our server, which hosts a fake website for `www.example.com`
+- *step 2: becoming the man in the middle*
+    - there are several ways to get the user's HTTPS request to land in our web server. One way is to attack the routing, so the user's HTTPS request is routed to our web server. Another way is to attack DNS, so when the victim's machine tries to find out the IP address of the target web server, it gets the IP address of our web server. In this task, we will simulate the attack-DNS approach by simply modifying the victim's `/etc/hosts`, i.e., adding `10.9.0.80 www.example.com`
+- *step 3: browse the target website*
+    - before browsing the target website, we need to enable the configuration file for the fake `www.example.com`, and restart `apache2`
+        ```
+        # a2ensite example_apache_ssl.conf
+        # server apache2 restart
+        (Enter password for the private key file of www.example.com)
+        ```
+- *result*: we won't be able to load the fake `www.example.com`, the error code is `SSL_ERROR_BAD_CERT_DOMAIN`, because we are using the certification for `www.bank32.com` (in real world, we won't be able to get the private key of the certificate for the real `www.example.com`, unless we can compromise the CA)
 
 ## Task 6: Launching a Man-In-The-Middle Attack with a Compromised CA
+- suppose that the attacker gets the private key of the root CA in previous tasks. Therefore, the attacker can generate any arbitrary certificate using this CA's private key
+- the attacker can generate a valid certificate for the `www.example.com`
+    ```
+    openssl req -newkey rsa:2048 -sha256 \
+                -keyout example.key -out example.csr \
+                -subj "/CN=www.example.com/O=EXAMPLE Inc./C=US" \
+                -passout pass:dees
+    openssl ca -config my_openssl.cnf -policy policy_anything \
+            -md sha256 -days 3650 \
+            -in example.csr -out example.crt -batch \
+            -cert ca.crt -keyfile ca.key
+    ```
+- modify `example_apache_ssl.conf`, replace the certificate and private key file
+    ```
+    SSLCertificateFile      /certs/example.crt
+    SSLCertificateKeyFile   /certs/example.key    
+    ```
+- then restart Apache, and visit `www.example.com` in browser, the fake site will be visited

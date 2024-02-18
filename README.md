@@ -55,7 +55,7 @@
 - Smart Contract Reentrancy Attack Lab **[Finished]**
 
 ### Cryptography
-- Public-Key Infrastructure Lab
+- Public-Key Infrastructure Lab **[Finished]**
 - Transport Layer Security Lab
 
 
