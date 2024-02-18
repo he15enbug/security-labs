@@ -16,7 +16,7 @@
 - a *Certificate Authority, CA* is a trusted entity that issues digital certificates. The digital certificate certifies the ownership of a public key by the named subject of the certificate. A number of commercial CAs are treated as root CAs. Root CAs certificates are self-signed
 - in this task, we will make ourselves a root CA, and generate a certificate for this CA. Root CA's certificates are usually pre-loaded into most OSes, web browsers, and other software that rely on PKI. Root CA's certificates are unconditionally trusted
 
-- *the configuration file `openssl.conf`*: to use `OpenSSL` to create certificates, we need to have a configuration file (`.conf`). It is used by three `OpenSSL` commands: `ca`, `req`, and `x509`. By default, `OpenSSL` use the configuration file from `/usr/lib/ssl/openssl.conf`. We will copy it to our current directory and instruct `OpenSSL` to use this copy instead
+- *the configuration file `openssl.cnf`*: to use `OpenSSL` to create certificates, we need to have a configuration file (`.cnf`). It is used by three `OpenSSL` commands: `ca`, `req`, and `x509`. By default, `OpenSSL` use the configuration file from `/usr/lib/ssl/openssl.cnf`. We will copy it to our current directory and instruct `OpenSSL` to use this copy instead
 - the `[CA_default]` section of the configuration file shows the default setting that we need to prepare (we need to create some folders and files). Configure `unique_subject=no` to allow creation of several certificates with same subject. For `serial` file, put a single number in string format (e.g., `1000`) in the file
     ```
     [ CA_default ]
@@ -69,8 +69,21 @@
                 -subj "/CN=www.bank32.com/O=Bank32 Inc./C=US" \
                 -passout pass:dees
         ```
-
 ## Task 3: Generating a Certificate for your Server
+- the CSR file needs to have the CA's signature to form a certificate. The following command turns the certificate signing request (`server.csr`) into an X509 certificate (`server.crt`), using the CA's `ca.crt` and `ca.key`
+    ```
+    openssl ca -config my_openssl.cnf -policy policy_anything \
+               -md sha256 -days 3650 \
+               -in server.csr -out server.crt -batch \
+               -cert ca.crt -keyfile ca.key
+    ```
+- `my_openssl.cnf` is the configuration file we copied and modified in task `1`. `policy_anything` is a policy defined in the configuration file, it doesn't enforce any matching rule
+- *copy the extension field*: for security reasons, the default setting in `openssl.cnf` does not allow the `openssl ca` command to copy the extension field from the request to the final certificate, to enable that, we need to add `copy_extensions = copy` to `my_openssl.cnf`
+- then, we regenerate `server.crt`, and use `openssl x509 -in server.crt -text -noout` to see the content, we will find the following field
+    ```
+    X509v3 Subject Alternative Name:
+        DNS:www.bank32.com, DNS:www.bank32A.com, DNS:www.bank32B.com
+    ```
 
 ## Task 4: Deploying Certificate in an Apache-Based
 
