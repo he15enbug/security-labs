@@ -49,6 +49,26 @@
 
 ## Task 2: Generating a Certificate Request for your Web Server
 - a company called `bank32.com` wants to get a public-key certificate from our CA. First, it needs to generate a Certificate Signing Request (CSR), which basically includes the company's public key and identity information. The CSR will be sent to the CA, who will verify the identity information in the request, and then generate a certificate
+- the command to generate a CSR is similar to the one we used to self-sign certificate for our root CA. The only difference is the `-x509` option. Without it, the command generates a request; with it, the commands generates a self-signed certificate. The following command will generate a pair of public/private key, and create a certificate signing request from the public key
+    ```
+    openssl req -newkey rsa:2048 -sha256 \
+                -keyout server.key -out server.csr \
+                -subj "/CN=www.bank32.com/O=Bank32 Inc./C=US" \
+                -passout pass:dees
+    ```
+- check the csr `openssl req -in server.csr -text -noout`
+- *adding alternative names*
+    - many websites have different URLs. Due to the hostname matching policy enforced by browsers, the common name in a certificate must match with the server's hostname, or browser will refuse to communicate with the server
+    - X509 specification defines extensions to be attached to a certificate. This extension is called *Subject Alternative Name (SAN)*. Using SAN, we can specify several hostnames in the `subjectAltName` field of a certificate (`subjectAltName` must contains the hostname in the `/CN` field, or the common name won't be accepted as a valid common name)
+        ```
+        openssl req -newkey rsa:2048 -sha256 \
+                -keyout server.key -out server.csr \
+                -addext "subjectAltName = DNS:www.bank32.com, \
+                                          DNS:www.bank32A.com, \
+                                          DNS:www.bank32B.com" \
+                -subj "/CN=www.bank32.com/O=Bank32 Inc./C=US" \
+                -passout pass:dees
+        ```
 
 ## Task 3: Generating a Certificate for your Server
 
