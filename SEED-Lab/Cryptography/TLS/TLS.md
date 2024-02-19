@@ -125,10 +125,26 @@
 - *the importance of hostname check*: when `context.check_hostname=True`, the hostname will be checked during the handshake. An attacker can try to modify the victim's local DNS record, making `www.example.com` point to the attacker's server IP, which has a valid certificate, e.g., for `www.attacker.com`, if there is no hostname check, when the victim visits `www.example.com`, they will actually visit `www.attacker.com`, since `www.attacker.com` has a valid certificate, there won't be any error
 
 ### Task 1.d: Sending and getting Data
-
-
+- send HTTP requests to the server, and read response from the server
+    ```
+    # request
+    request = b'GET / HTTP/1.0\r\nHost: ' + hostname.encode('utf-8') + b'\r\n\r\n'
+    ssock.sendall(request)
+    # response
+    response = ssock.recv(2048)
+    while response:
+        pprint.pprint(response.split(b'\r\n'))
+        response = ssock.recv(2048)
+    ```
+- after adding the code, run the program, we can get the HTML code of the main page of `www.example.com`
+- let's try to get an image at `wallpapercave.com/wp/wp13342432.jpg`
+    - modify the request `request = b'GET /wp/wp13342432.jpg HTTP/1.0\r\nHost: ' + hostname.encode('utf-8') + b'\r\n\r\n'`
+    - handshake and fetch the picture `./handshake wallpapercave.com`, we will gete the data of the image
+- `wallpapercave.com` uses another CA `Baltimore CyberTrust Root`, for simplicity, I directly used `/etc/ssl/certs` as certificate directory
 
 ## Task 2: TLS Server
+
+
 ### Task 2.a: Implement a simple TLS server
 ### Task 2.b: Testing the server program using browsers
 ### Task 2.c: Certificate with multiple names
