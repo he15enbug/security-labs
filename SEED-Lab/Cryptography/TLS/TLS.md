@@ -143,10 +143,92 @@
 - `wallpapercave.com` uses another CA `Baltimore CyberTrust Root`, for simplicity, I directly used `/etc/ssl/certs` as certificate directory
 
 ## Task 2: TLS Server
-
+- before start, we need to create a CA, and use it's private key to create a server certificate for this task. I used `www.he15enbug2024.com` as the common name of the server's certificate
 
 ### Task 2.a: Implement a simple TLS server
-### Task 2.b: Testing the server program using browsers
-### Task 2.c: Certificate with multiple names
+- a simple TLS server program
+    ```
+    import socket
+    import ssl
 
+    html = """
+    HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n
+    <!DOCTYPE html><html><body><h1>Hello, world!</h1></body></html>
+    """
+
+    SERVER_CERT    = './server-certs/server.crt'
+    SERVER_PRIVATE = './server-certs/server.key'
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(SERVER_CERT, SERVER_PRIVATE)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
+    sock.bind(('0.0.0.0', 443)) # 0.0.0.0 means listening to all interfaces
+    sock.listen(5)
+
+    while True:
+        newsock, fromaddr = sock.accept()
+        ssock = context.wrap_socket(newsock, server_side=True)
+
+        data = ssock.recv(1024)             # Read data over TLS
+        ssock.sendall(html.encode('utf-8')) # Send data over TLS
+
+        ssock.shutdown(socket.SHUT_RDWR)    # Close the TLS connection
+        ssock.close()
+    ```
+- test: run `server.py` on the server, type the password for the server's key file, then run `handshake.py` on the client. The handshake process will succeed
+
+### Task 2.b: Testing the server program using browsers
+- add our CA's certificate to Firefox
+- since we generated a certificate with common name `www.he15enbug2024.com`, we need to use this hostname to visit the server, just add an entry to the `/etc/hosts` file of the VM: `10.9.0.43 www.he15enbug2024.com`
+- then, we will be able to load the content returned by the server on the browser
+### Task 2.c: Certificate with multiple names
+- many websites have different URLs, e.g., `www.example.com`, `www.example.org`, `example.com` all point to the same web server. Just as what we did in the Public-Key Infrastructure Lab, we can set `subjectAltName` field using `-addext` in `openssl req` command. We can also use a configuration file to generate a certificate signing request, here is an example `server_openssl.cnf`
+    ```
+    [req]
+    prompt              = no
+    distinguished_name  = req_distinguished_name
+    req_extensions      = req_ext
+    [req_distinguished_name]
+    C   = US
+    ST  = NY
+    O   = HEISENBUG LTD.
+    CN  = www.he15enbug2024.com
+    [req_ext]
+    subjectAltName      = @alt_names
+    [alt_names]
+    DNS.1   = www.he15enbug2024.com
+    DNS.2   = www.he15enbug2024.org
+    DNS.3   = *.he15enbug2024.com
+    ```
+- generate a certificate signing request:
+    ```
+    openssl req -newkey rsa:2048 -config ./server_openssl.cnf -batch \
+    -sha256 -keyout server.key -out server.csr -passout pass:dees
+    ```
+- remember to set `copy_extensions = copy` in the configuration file for signing the certificate for the server using the CA's private key
+- add the following entry to `/etc/hosts`, and visit these 3 hostnames in both Firefox and the client program, we will be able to get response
+    ```
+    10.9.0.43   www.he15enbug2024.com
+    10.9.0.43   www.he15enbug2024.org
+    10.9.0.43   hi.he15enbug2024.com
+    ```
 ## Task 3: A Simple HTTPS Proxy
+- TLS can protect against the MITM attack, but only if the underlying PKI is secured. In this task, we will perform MITM attack with the assumption that the PKI is compromised
+- we will implement a simple HTTPS proxy called `mHTTPSproxy` (`m` stands for `mini`). It simply integrates the client and the server program from Task `1` and `2` together, to the browser or client, the proxy is just a server, while to the server, it is just a client
+
+### Handling multiple HTTP requests
+- a browser may simultaneouly send multiple HTTP requests to the server, so after receiving an HTTP request, it's better to spawn a thread to process it
+    ```
+    import threading
+    while True:
+        sock_for_browser, fromaddr = sock_listen.accept()
+        ssock_for_browser = context_srv.wrap_socket(sock_for_browser, server_side=True)
+        x = threading.Thread(target=process_request, args=(ssock_for_browser,))
+        x.start()
+    
+    def process_request(ssock_for_browser):
+        hostname = 'www.he15enbug2024.com'
+        sock_for_server = socket.create_connection((hostname, 443))
+        ssock_for_server = 
+    ```
