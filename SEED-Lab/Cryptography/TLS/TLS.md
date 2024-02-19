@@ -214,7 +214,7 @@
     10.9.0.43   hi.he15enbug2024.com
     ```
 ## Task 3: A Simple HTTPS Proxy
-- TLS can protect against the MITM attack, but only if the underlying PKI is secured. In this task, we will perform MITM attack with the assumption that the PKI is compromised
+- TLS can protect against the MITM attack, but only if the underlying PKI is secured. In this task, we will perform MITM attack with the assumption that some CA is compromised or the server's private key is stolen
 - we will implement a simple HTTPS proxy called `mHTTPSproxy` (`m` stands for `mini`). It simply integrates the client and the server program from Task `1` and `2` together, to the browser or client, the proxy is just a server, while to the server, it is just a client
 
 ### Handling multiple HTTP requests
@@ -229,6 +229,37 @@
     
     def process_request(ssock_for_browser):
         hostname = 'www.he15enbug2024.com'
+
+        context_cl = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context_cl.load_verify_locations(capath=cadir)
+        context_cl.verify_mode = ssl.CERT_REQUIRED
+        context_cl.check_hostname = True
+
         sock_for_server = socket.create_connection((hostname, 443))
-        ssock_for_server = 
+        ssock_for_server = context_cl.wrap_socket(sock_for_server, server_hostname=hostname, do_handshake_on_connect=True)
+
+        request = ssock_for_browser.recv(2048)
+
+        if request:
+            # Forward request to server
+            ssock_for_server.sendall(request)
+            # Get response from server, and forward it to browser
+            response = ssock_for_server.recv(2048)
+            while response:
+                ssock_for_browser.sendall(response)
+                response = ssock_for_server.recv(2048)
+        
+        ssock_for_browser.shutdown(socket.SHUT_RDWR)
+        ssock_for_browser.close()
     ```
+- we will use the hosting VM as the client, and visit the server from the VM, add an entry `10.9.0.143 www.he15enbug2024.com` to `/etc/hosts`
+- *the proxy setup*: changing VM's `/etc/hosts` will also affect all the containers, as they use Docker's embedded DNS server, which forwards external DNS lookups to the DNS servers configured on the hosting VM whose DNS server do use the `/etc/hosts`. So, on the proxy container, the IP address to `www.he15enbug2024.com` is also `10.9.0.143` (it should point to the real server `10.9.0.43`)
+    - ask the container to use an external DNS server by changing `/etc/resolv.conf` file on the proxy container, it has multiple `nameserver` entry, change the first one to `8.8.8.8`
+    - check the IP
+        ```
+        # ping www.he15enbug2024.com
+        PING www.he15enbug2024.com (10.9.0.43) 56(84) bytes of data.
+        64 bytes from www.he15enbug2024.com (10.9.0.43): icmp_seq=1 ttl=64 time=0.163 ms
+        ```
+- test
+    - the `mHTTPSproxy` program will proxy the traffic between the client (the hosting VM) and our server (`10.9.0.43`)
