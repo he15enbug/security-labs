@@ -58,7 +58,7 @@
 - Public-Key Infrastructure Lab **[Finished]**
 - Transport Layer Security Lab **[Finished]**
 - RSA Public-Key Encryption and Signature Lab **[Finished]**
-- MD5 Collision Attack Lab
+- MD5 Collision Attack Lab **[Finished]**
 - Hash Length Extension Attack Lab
 
 
