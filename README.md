@@ -56,7 +56,10 @@
 
 ### Cryptography
 - Public-Key Infrastructure Lab **[Finished]**
-- Transport Layer Security Lab
+- Transport Layer Security Lab **[Finished]**
+- RSA Public-Key Encryption and Signature Lab
+- MD5 Collision Attack Lab
+- Hash Length Extension Attack Lab
 
 
 ## [ASU CSE365 Introduction to Information Assurance](https://adamdoupe.com/teaching/classes/cse365-intro-information-assurance-s20/)
