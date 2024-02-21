@@ -60,6 +60,8 @@
 - RSA Public-Key Encryption and Signature Lab **[Finished]**
 - MD5 Collision Attack Lab **[Finished]**
 - Hash Length Extension Attack Lab
-
+- Secret-Key Encryption
+- Padding Oracle Attack
+- Pseudo Random Number Generation
 
 ## [ASU CSE365 Introduction to Information Assurance](https://adamdoupe.com/teaching/classes/cse365-intro-information-assurance-s20/)
