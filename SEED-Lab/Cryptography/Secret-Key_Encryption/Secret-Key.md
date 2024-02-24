@@ -131,7 +131,17 @@
             30 31 32 33 34 35 36 37 38 39 41 42 43 44 45 46 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10
             ```
 ## Task 5: Error Propagation - Corrupted Cipher Text
-
+- to understand the error propagation property of various encryption modes, we will do the following
+    1. create a text file that is at least 1000 bytes
+    2. encrypt the file using AES-128 cipher (try ECB, CBC, CFB, and OFB)
+    3. unfortunately, a single bit of the 55th byte in the encrypted file got corrupted. (i.e., we manually modify it to another value)
+    4. decrypt the corrupted ciphertext file
+- how much information we can recover by decrypting the corrupted file
+    - in OFB mode, after decrypting the corrupted ciphertext, only the 55th byte is different from the plaintext
+    - in ECB and CFB, a block of 16 bytes including the 55th byte are different from the plaintext
+    - in CBC, a block of 16 bytes and an extra byte (the 70th byte) are incfluenced
+    - for CFB, the influenced block is from the 55th byte to 80th byte. While in CBC and ECB, we first divide the text into blocks of 16 bytes, and the influenced block is the block that the 55th byte is at, in this case, its from the 49th byte to 64th byte
+    - for all four modes, the total length of the decrypted text is the same as the plaintext
 ## Task 6: Initial Vector (IV) and Common Mistakes
 
 ### Task 6.1: IV Experiment
