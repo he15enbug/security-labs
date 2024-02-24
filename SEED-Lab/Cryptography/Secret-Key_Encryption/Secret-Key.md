@@ -143,11 +143,56 @@
     - for CFB, the influenced block is from the 55th byte to 80th byte. While in CBC and ECB, we first divide the text into blocks of 16 bytes, and the influenced block is the block that the 55th byte is at, in this case, its from the 49th byte to 64th byte
     - for all four modes, the total length of the decrypted text is the same as the plaintext
 ## Task 6: Initial Vector (IV) and Common Mistakes
+- most of encryption modes require an *Initial Vector (IV)*. Properties of an IV depend on the cryptographic scheme used. If we are not careful in selecting IVs, the data encrypted by us may not be secure at all, even though we are using a secure encryption algorithm and mode
 
 ### Task 6.1: IV Experiment
+- a basic requirement for IV is *uniqueness*, which means that no IV may be reused under the same key
+- encrypt the same plaintext using
+    1. two different IVs
+    2. the same IV
+- result: with the same IV, it will generate the same ciphertext
 
 ### Task 6.2: Common Mistake: Use the Same IV
+- one may argue that if the plaintext does not repeat, using the same IV is safe. Let's look at *Output Feedback (OFB)* mode. Assume that the attacker gets hold of a plaintext `P1` and a ciphertext `C1`, can they decrypt other encrypted messages if the IV is always the same? Given the following information, please try to figure out the actual content of `P2` based on `C2`, `P1`, and `C1`
+    ```
+    Plaintext  (P1): This is a known message!
+    Ciphertext (C1): a469b1c502c1cab966965e50425438e1bb1b5f9037a4c159
+    Plaintext  (P2): (unknown)
+    Ciphertext (C2): bf73bcd3509299d566c35b5d450337e1bb175f903fafc159
+    ```
+- first we need to know how OFB works: OFB mode generates a key stream by encrypting the IV using the block cipher algorithm (e.g., AES) with the secret key. The resulting ciphertext is XORed with the plaintext to produce the ciphertext. This process is repeated for each block of plaintext. So, for a given key, if the IV is the same, then the generated key stream is the same, `C1 = P1 XOR KEY_STREAM`, `C2 = P2 XOR KEY_STREAM`, we `XOR` the two formulas, and get `C1 XOR C2 = P1 XOR P2`, i.e., `P2 = C1 XOR C2 XOR P1`
+- use the provided sample code
+    ```
+    #!/usr/bin/python3
 
+    # XOR two bytearrays
+    def xor(first, second):
+    return bytearray(x^y for x,y in zip(first, second))
+
+    MSG   = "This is a known message!"
+    HEX_1 = "a469b1c502c1cab966965e50425438e1bb1b5f9037a4c159"
+    HEX_2 = "bf73bcd3509299d566c35b5d450337e1bb175f903fafc159"
+
+    # Convert ascii string to bytearray
+    D1 = bytes(MSG, 'utf-8')
+
+    # Convert hex string to bytearray
+    D2 = bytearray.fromhex(HEX_1)
+    D3 = bytearray.fromhex(HEX_2)
+
+    tmp = xor(D1, D2)
+    P2  = xor(tmp, D3)
+
+    print(P2.hex())
+    print(P2.decode('utf-8'))
+    ```
+- result
+    ```
+    $ ./sample_code.py 
+    4f726465723a204c61756e63682061206d697373696c6521
+    Order: Launch a missile!
+    ```
+- the attack used in this experiment is called the *known-plaintext attack*, which is an attack model for cryptanalysis where the attacker has access to both the plaintext and its encrypted version (ciphertext). If this can lead to the revealing of further secret information, the encryption scheme is not considered as secure
 ### Task 6.3: Common Mistake: Use a Predictable IV
 
 ## Task 7: Programming using the Crypto Library
