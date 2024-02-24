@@ -58,15 +58,78 @@
 
 ## Task 3: Encryption Mode - ECB vs. CBC
 - a sample picture `pic_original.bmp` is given. We will encrypt the picture using *ECB (Electronic Code Book)* and *CBC (Cipher Block Chaining)* modes, and then do the following
+    ```
+    openssl enc -aes-128-ecb -e -in my_pic.bmp -out ecb.bmp \
+                  -K 00112233445566778889aabbccddeeff \
+    openssl enc -aes-128-cbc -e -in my_pic.bmp -out cbc.bmp \
+                    -K 00112233445566778889aabbccddeeff \
+                    -iv 0102030405060708
+    ```
     1. treat the encrypted picture as a picture, display it. For `bmp` file, the first 54 bytes contain the header information about the picture, we need to set it correctly (replace the header with the header of the original picture)
         ```
-        $ head -c 54 p1.bmp > header
+        $ head -c 54 my_pic.bmp > header
         $ tail -c +55 p2.bmp > body
         $ cat header body > new.bmp
         ```
     2. Display the encrypted picture using a picture viewing program (e.g., `eog`)
+- *result*: from the picture encrypted using `ecb`, we can still distinguish some pattern of the original picture. While in the `cbc` encrypted picture, we can learn about nothing about the original picture
 ## Task 4: Padding
-
+- for block ciphers, when the size of a plaintext is not a multiple of the block size, padding may be required. The *PKCS#5* padding scheme is widely used by many block ciphers. We conduct the following experiments to understand how this type of padding works
+    1. use ECB, CBC, CFB, and OFB modes to encrypt a file (pick any cipher), which modes have paddings, and which ones do not, explain the result
+        - commands
+            ```
+            # ECB
+            echo "Start AES 128 ECB Encryption"
+            openssl enc -aes-128-ecb -e -in plain.txt -out ecb.bin \
+                            -K 00112233445566778889aabbccddeeff \
+            # CBC
+            echo "Start AES 128 CBC Encryption"
+            openssl enc -aes-128-cbc -e -in plain.txt -out cbc.bin \
+                            -K 00112233445566778889aabbccddeeff \
+                            -iv 0102030405060708
+            # CFB
+            echo "Start AES 128 CFB Encryption"
+            openssl enc -aes-128-cfb -e -in plain.txt -out cfb.bin \
+                            -K 00112233445566778889aabbccddeeff \
+                            -iv 0102030405060708
+            # OFB
+            echo "Start AES 128 OFB Encryption"
+            openssl enc -aes-128-ofb -e -in plain.txt -out ofb.bin \
+                            -K 00112233445566778889aabbccddeeff \
+                            -iv 0102030405060708
+            ```
+        - after run these commands, we get the following result, we can know that only in CBC and ECB mode have applied padding (the result file is 16 bytes). CBC requires padding because it operates by XORing each plaintext block with the previous ciphertext block before encryption. In ECB mode, padding is not inherently required by the mode, but in practice, padding is often applied
+            ```
+            $ ./task4.sh 
+            $ ls -l
+            total 24
+            -rw-rw-r-- 1 seed seed  16 Feb 24 07:53 cbc.bin
+            -rw-rw-r-- 1 seed seed  13 Feb 24 07:53 cfb.bin
+            -rw-rw-r-- 1 seed seed  16 Feb 24 07:53 ecb.bin
+            -rw-rw-r-- 1 seed seed  13 Feb 24 07:53 ofb.bin
+            -rw-rw-r-- 1 seed seed  13 Feb 24 07:53 plain.txt
+            -rwxrwxrwx 1 seed seed 787 Feb 24 07:50 task4.sh
+            ```
+    2. create 3 files, which contain 5 bytes, 10 bytes, and 16 bytes, respectively. We can use `echo -n "example" > file.txt` to do this. Then, use `openssl enc -aes-128-cbc -e` to encrypt these three files using 128-bit AES with CBC mode, describe the size of the encrypted files. To see what is added to the padding during the encryption, we will decrypt these files using `openssl enc -aes-128-cbc -d`. Unfortunately, decryption by default will automatically remove the padding, the command does have an option called `-nopad`, which will keep the padding during decryption. The result shows that in CBC mode of 128-bit AES, when `file_bytes%16!=0`, it will pad the file to multiple of 16 bytes. When `file_bytes%16==0`, it will pad 16 bytes to the file
+        ```
+        Size of the Original Files:
+        -rw-rw-r-- 1 seed seed  5 Feb 24 08:20 f1.txt
+        -rw-rw-r-- 1 seed seed 10 Feb 24 08:20 f2.txt
+        -rw-rw-r-- 1 seed seed 16 Feb 24 08:20 f3.txt
+        Size of the Encrypted Files:
+        -rw-rw-r-- 1 seed seed 16 Feb 24 08:20 f1.bin
+        -rw-rw-r-- 1 seed seed 16 Feb 24 08:20 f2.bin
+        -rw-rw-r-- 1 seed seed 32 Feb 24 08:20 f3.bin
+        ```
+        - decrypt these files with `-nopad` option to see what's in the padding. It is obvious that each padded byte represent the total length of the padding, e.g., `f1.txt` is 5 bytes, so the padding is 11 bytes (`0x0B`), so the padding consists of 11 bytes of `0xB0`
+            ```
+            f1_padded.txt
+            30 31 32 33 34 0B 0B 0B 0B 0B 0B 0B 0B 0B 0B 0B
+            f2_padded.txt
+            30 31 32 33 34 35 36 37 38 39 06 06 06 06 06 06
+            f3_padded.txt
+            30 31 32 33 34 35 36 37 38 39 41 42 43 44 45 46 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10 10
+            ```
 ## Task 5: Error Propagation - Corrupted Cipher Text
 
 ## Task 6: Initial Vector (IV) and Common Mistakes
