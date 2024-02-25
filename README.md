@@ -61,7 +61,7 @@
 - MD5 Collision Attack Lab **[Finished]**
 - Hash Length Extension Attack Lab
 - Secret-Key Encryption **[Finished]**
-- Padding Oracle Attack
+- Padding Oracle Attack **[Finished]**
 - Pseudo Random Number Generation
 
 ## [ASU CSE365 Introduction to Information Assurance](https://adamdoupe.com/teaching/classes/cse365-intro-information-assurance-s20/)
