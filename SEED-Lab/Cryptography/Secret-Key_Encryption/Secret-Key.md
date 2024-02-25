@@ -193,6 +193,53 @@
     Order: Launch a missile!
     ```
 - the attack used in this experiment is called the *known-plaintext attack*, which is an attack model for cryptanalysis where the attacker has access to both the plaintext and its encrypted version (ciphertext). If this can lead to the revealing of further secret information, the encryption scheme is not considered as secure
+
+- if we replace OFB with CFB, how much of `P2` can be revealed?
+    - first, we create `P1` and `P2`, then encrypt them to `C1` and `C2`, respectively
+        ```
+        echo -n "This is a known message!" > P1
+        echo -n "Order: Launch a missile!" > P2
+
+        openssl enc -aes-128-cfb -e -in P1 -out C1 \
+                        -K 00112233445566778889aabbccddeeff \
+                        -iv 0102030405060708
+        openssl enc -aes-128-cfb -e -in P2 -out C2 \
+                        -K 00112233445566778889aabbccddeeff \
+                        -iv 0102030405060708
+        ```
+    - `C1`: `D3EEE656E156C9F1CEBED4731A67324DC90CDB5E85222AD4`
+    - `C2`: `C8F4EB40B3059A9DCEEBD17E1D303D4D59AB113CA9F2B307`
+    - compare the result of `P1 XOR C1 XOR C2` with the result in OFB, we can only recover the first block of the data (16 bytes), the reason is simple:
+        1. in both modes, each processing a block, there will be 3 inputs: a vector, a key, and plaintext. For the first block, the vector is IV
+        2. however, for later blocks, the vector that OFB uses is generated from previous vector and the key, which means the new vector is not related to the ciphertext, this is the key that we can use `P1 XOR C2 XOR C2` to get `P2`
+        3. in CFB, the vector is generated from not only the key and previous vector, but also the ciphertext of the previous block, so, for different plaintext, the key stream after the first block is different, so `P1 XOR C2 XOR C2` will not be able to get the correct plaintext after the first block (unless the first block of `P1` and `P2` are the same, in that case, we can recover the second block)
+        ```
+        4f726465723a204c 61756e6368206120 fdc2b9114db7fcf2 <-- result in CFB
+        4f726465723a204c 61756e6368206120 6d697373696c6521 <-- result in OFB
+        ```
 ### Task 6.3: Common Mistake: Use a Predictable IV
+- another requirement on IV is that IVs need to be unpredictable for many schemes, i.e., IVs need to be randomly generated
+- assume that Bob just sent out an encrypted message, and Eve knows what its content is either `Yes` or `No`. Eve can see the ciphertext and the IV used to encrypt the message, but since the encryption algorithm AES is quite strong, Eve has no idea what the actual content is. However, since Bob uses predictable IVs, Eve knows exactly what IV Bob is going to use next
+- a good cipher should not only tolerate the known-plaintext attack, it should also tolerate the *chosen-plaintext attack*, which is an attack model for cryptanalysis where the attacker can obtain the ciphertext for an arbitrary plaintext. Since AES is a strong cipher that can tolerate the chosen-plaintext attack, Bob does not mind encrypting any plaintext given by Eve, he does use a different IV for each plaintext, unfortunately, the IVs he generates are not random, and they can always be predictable
+- *task*: construct a message and ask Bob to encrypt it and get the ciphertext. Then use this opportunity to figure out whether an actual content of Bob's secret message is `Yes` or `No`. An encryption oracle is given, which simulates Bob and encrypt message with 128-bit AES with CBC mode
+- first, we pad `Yes` and `No` to 16 bytes
+    ```
+    5965730D0D0D0D0D0D0D0D0D0D0D0D0D <-- Yes
+    4e6f0E0E0E0E0E0E0E0E0E0E0E0E0E0E <-- No
+    ```
+- our padded data is only 16 bytes, so we can only consider the first block. In CBC mode, it will first calculate `P XOR IV`, then use the key and chosen cipher to encrypt the result, and get the ciphertext. Now, we know the IV for a message (`Yes` or `No`), denote the IV as `IV0`, and its ciphertext `C0`, and we can predict the next IV, what we can do is to construct the result of `P XOR IV`, make it the same as `PAD("Yes") XOR IV0` or `PAD("No") XOR IV0`, and compare the ciphertext to `C0`, then we can know what the orginal message is
+- steps
+    1. calculate `PAD("Yes") XOR IV0`, and `PAD("No") XOR IV0`
+        ```
+        C0:  35a8e7c8d7515ee8a01f19693c617072
+        IV0: 1700d2a48d1e1138da3112d44fda20a6
+        PAD("Yes"): 5965730D0D0D0D0D0D0D0D0D0D0D0D0D
+        PAD("No"):  4e6f0E0E0E0E0E0E0E0E0E0E0E0E0E0E
+        PAD("Yes") XOR IV0: 4e65a1a980131c35d73c1fd942d72dab
+        PAD("No") XOR IV0:  596fdcaa83101f36d43f1cda41d42ea8
+        ```
+    2. the next IV is `IV1=e9d563218e1e1138da3112d44fda20a6`, we need to provide a plaintext `P1`, such that `P1 XOR IV1 == 4e65a1a980131c35d73c1fd942d72dab`, i.e., `P1 = IV1 XOR 4e65a1a980131c35d73c1fd942d72dab`
+        - input `P1: a7b0c2880e0d0d0d0d0d0d0d0d0d0d0d` to the oracle, get the ciphertext is `35a8e7c8d7515ee8a01f19693c617072099a133d8089a84005deffb5923e437d`, we can ignore the second block, as `P1` is 16 bytes, CBC added another 16 bytes padding, the second block of the ciphertext is for the padding only. We can find that the first block of the ciphertext is the same as the ciphertext of `Yes`, so, the original message is `Yes`
+    3. I tried `Yes` first, and fortunately got the correct result. If in the previous step, the first block of the cipher text is not the same as `C0=35a8e7c8d7515ee8a01f19693c617072`, we need to use the next IV `IV2=431c545e8e1e1138da3112d44fda20a6`, calculate `P2 = IV2 XOR 596fdcaa83101f36d43f1cda41d42ea8`, and input `P2` to the oracle
 
 ## Task 7: Programming using the Crypto Library
