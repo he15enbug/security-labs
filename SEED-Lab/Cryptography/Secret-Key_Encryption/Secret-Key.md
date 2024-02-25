@@ -242,4 +242,25 @@
         - input `P1: a7b0c2880e0d0d0d0d0d0d0d0d0d0d0d` to the oracle, get the ciphertext is `35a8e7c8d7515ee8a01f19693c617072099a133d8089a84005deffb5923e437d`, we can ignore the second block, as `P1` is 16 bytes, CBC added another 16 bytes padding, the second block of the ciphertext is for the padding only. We can find that the first block of the ciphertext is the same as the ciphertext of `Yes`, so, the original message is `Yes`
     3. I tried `Yes` first, and fortunately got the correct result. If in the previous step, the first block of the cipher text is not the same as `C0=35a8e7c8d7515ee8a01f19693c617072`, we need to use the next IV `IV2=431c545e8e1e1138da3112d44fda20a6`, calculate `P2 = IV2 XOR 596fdcaa83101f36d43f1cda41d42ea8`, and input `P2` to the oracle
 
+### [Additional Readings](https://defuse.ca/cbcmodeiv.htm) on more advanced cryptanalysis on IV
+
 ## Task 7: Programming using the Crypto Library
+- in this task, we are given a plaintext and a ciphertext, and our job is to find the key used for the encryption. Useful information:
+    ```
+    Plaintext (21 bytes): This is a top secret.
+    Ciphertext :          764aa26b55a4da654df6b19e4bce00f4
+                          ed05e09346fb0e762583cb7da2ac93a2
+    IV:                   aabbccddeeff00998877665544332211
+    ```
+    - The aes-128-cbc cipher is used for the encryption
+    - The key used to encrypt this plaintext is an English word shorter than 16 characters.The word can be found from a typical English dictionary. Since the word has less than 16 characters, pound signs (`#`: hexadecimal value is `0x23`) are appended to the end of the word to form a key of 128 bits
+    `764aa26b55a4da654df6b19e4bce00f4ed05e09346fb0e762583cb7da2ac93a2`
+- use the provided english word list `Labsetup/Files/words.txt`
+- write a C program to read from `words.txt`, one line at a time, and pad it with `0x23` to 16 bytes, then use this key to encrypt the plaintext, and compare the result with the target ciphertext, if there are the same, the key is correct
+- result: 
+    ```
+    $ gcc -o brute_force brute_force.c -lcrypto
+    $ ./brute_force
+    Find the key:
+    Syracuse########
+    ```

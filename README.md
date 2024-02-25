@@ -60,7 +60,7 @@
 - RSA Public-Key Encryption and Signature Lab **[Finished]**
 - MD5 Collision Attack Lab **[Finished]**
 - Hash Length Extension Attack Lab
-- Secret-Key Encryption
+- Secret-Key Encryption **[Finished]**
 - Padding Oracle Attack
 - Pseudo Random Number Generation
 
