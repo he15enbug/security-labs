@@ -92,13 +92,87 @@
         return 0;
     }
     ```
-- compilation `gcc -o ext length_ext.c -lcrypto`
+- compilation `gcc -o ext length_ext.c -lcrypto`, the result of the program is `eb71f88b08909fa9fe582c994a6f620b739045287104bf44fad9a2d0e28d6bf3`
+- think about how the hash algorithm works, it will first add padding to the original data, make its size the multiple of 64 bytes, then it will start from the first 64-byte block, compute an output, and fed into the next block, with the next block of data. When we get the hash value of `This is a test message`, we can continue the computation, extend a block and get the hash of `This is a test message<PADDING>Extra message` (there will also be padding after `Extra message`), to verify this, we can use the following command, and we can get the same result:
+    ```
+    (IMPORTANT: no spaces or lines at the beginning or end of each line)
+    $ printf "This is a test message"\
+    > "\x80"\
+    > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+    > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+    > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+    > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+    > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+    > "\xB0"\
+    > "Extra message" | sha256sum
+    eb71f88b08909fa9fe582c994a6f620b739045287104bf44fad9a2d0e28d6bf3  -
+    ```
 - *task*
     - generate a valid MAC for the following request
         - `http://www.seedlab-hashlen.com?myname=he15enbug&uid=1002&lstcmd=1&mac=<mac>`
-        - content being hashed: `983abe:myname=he15enbug&uid=1002&lstcmd=1` + padding
-        - the MAC is `f45212a2c35ae17687d00d0bd4f0c248eaaabb1893399da1a12683b29779b7ed`
+        - the MAC is
+            ```
+            $ printf "983abe:myname=he15enbug&uid=1002&lstcmd=1" | sha256sum
+            f45212a2c35ae17687d00d0bd4f0c248eaaabb1893399da1a12683b29779b7ed  -
+            ```
     - based on this MAC, construct a new MAC value for this request
         - `http://www.seedlab-hashlen.com?myname=he15enbug&uid=1002&lstcmd=1&download=secret.txt&mac=<new-mac>`
-        - content being hashed: `<KEY>:myname=he15enbug&uid=1002&lstcmd=1&download=secret.txt` + padding
-    - in other words, suppose that we have the MAC for `983abe:myname=he15enbug&uid=1002&lstcmd=1`, and we don't know the key `983abe`. Our objective is to get the MAC for `983abe:myname=he15enbug&uid=1002&lstcmd=1&download=secret.txt`
+    
+- *solution*
+    - based on previous experiment, we know that after getting the hash of `<KEY>:content<PADDING>`, we can extend arbitrary content and get the hash of `<KEY>:<CONTENT><PADDING><EXTRA_CONTENT><PADDING>`
+    - first, we can use the C program, extend `f45212a2c35ae17687d00d0bd4f0c248eaaabb1893399da1a12683b29779b7ed` with extra data `&download=secret.txt` (20 bytes)
+        ```
+        $ ./ext
+        db6f423fe3f2537cba8555e940c559cd388a3cf8a5ad4fcf0be8ea067e1a6880
+        ```
+    - this MAC is for the following message (the padding after `&download=secret.txt` is automatically added by the hash algorithm)
+        ```
+        983abe:myname=he15enbug&uid=1002&lstcmd=1<PADDING>&download=secret.txt
+        ```
+    - in real attack, attacker doesn't need to know the key, as long as the attacker knows the length of the data `983abe:myname=he15enbug&uid=1002&lstcmd=1`, they can figure out the padding (URL encoded) `%80%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%01%48`
+    - let's verify this (this step is only for us to verify that we get the correct results so far)
+        ```
+        (IMPORTANT: no spaces or lines at the beginning or end of each line)
+        $ printf \
+        > "983abe:myname=he15enbug&uid=1002&lstcmd=1"\
+        > "\x80"\
+        > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+        > "\x00\x00\x00\x00\x00\x00\x00\x00"\
+        > "\x00\x00\x00\x00"\
+        > "\x01\x48"\
+        > "&download=secret.txt" | sha256sum
+        db6f423fe3f2537cba8555e940c559cd388a3cf8a5ad4fcf0be8ea067e1a6880  -
+        ```
+    - the complete URL that the attack can use is
+        ```
+        http://www.seedlab-hashlen.com?myname=he15enbug&uid=1002&lstcmd=1%80%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%01%48&download=secret.txt&mac=db6f423fe3f2537cba8555e940c559cd388a3cf8a5ad4fcf0be8ea067e1a6880
+        ```
+    - result: the page will display the following information (it indicates that we successfully get the content of `secret.txt`)
+        ```
+        Yes, your MAC is valid
+        File Content
+        TOP SECRET.
+        DO NOT DISCLOSE.
+        ```
+
+## Task 4: Attack Mitigation using HMAC
+- concatenating the key and the message is an insecure way to compute a MAC. The standard way to calculate MACs is to use HMAC, we need to modify the server program's `verify_mac()` function and use Python's `hmac` module to calculate the MAC (this function resides in `lab.py`). Given a key and message (both of type string), the HMAC can be computed as shown below
+    ```
+    real_mac = hmac.new(bytearray(key.encode('utf-8')),
+                msg=message.encode('utf-8', 'surrogateescape'),
+                digestmod=hashlib.sha256).hexdigest()
+    ```
+- after making changes, rebuild and restart all containers
+- construct a request to do task `1` again, we use `hmac` to calculate the MAC, and then include it in the URL, then we can find `"Yes, your MAC is valid"` on the webpage
+    ```
+    $ ./hmac_calc.py 
+    0fa86fdd06ed6c929e23684da37e8e2b534d5794eca7229988769de287d50eb9
+    ```
+    - URL: `http://www.seedlab-hashlen.com?myname=he15enbug&uid=1002&lstcmd=1&mac=0fa86fdd06ed6c929e23684da37e8e2b534d5794eca7229988769de287d50eb9`
+- why length extension attack will fail MAC verification when the client and server use HMAC? The step of HMAC calculation is below
+    1. key padding: make the key the same size as the block size of the hash function, if it is longer, hash it; if it is shorter, pad it
+    2. define 2 constants `ipad` and `opad`, both equal to the block size, `inner_pad = key XOR ipad`, `outer_pad = key XOR opad`
+    3. `h1 = hash(inner_pad || message)`
+    4. `h2 = hash(outer_pad || h1)`
+    5. the output is `h2`
+    - if an attacker extend the message, they can get correct `h1` for that new message, but the calculation of `h2` will need `outer_pad`, which the attacker cannot know, so the hash length extension attack will fail
