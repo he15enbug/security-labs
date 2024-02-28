@@ -1,8 +1,5 @@
 # Overview
 
-## [MIT 6.858 Computer System Security](https://css.csail.mit.edu/6.858/2022/)
-
-
 ## [SEED Lab](https://seedsecuritylabs.org)
 
 ### System Security **[Finished]**
@@ -64,4 +61,3 @@
 - Padding Oracle Attack **[Finished]**
 - Pseudo Random Number Generation **[Finished]**
 
-## [ASU CSE365 Introduction to Information Assurance](https://adamdoupe.com/teaching/classes/cse365-intro-information-assurance-s20/)
